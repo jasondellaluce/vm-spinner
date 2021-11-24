@@ -208,9 +208,13 @@ func runApp(c *cli.Context) error {
 				case l := <-channels.CmdOutput:
 					line = fmt.Sprintf("[OUTPUT %s] %s", name, l)
 				case l := <-channels.Debug:
-					line = fmt.Sprintf("[DEBUG  %s] %s", name, l)
+					if c.Bool("debug") {
+						line = fmt.Sprintf("[DEBUG  %s] %s", name, l)
+					}
 				case l := <-channels.Info:
-					line = fmt.Sprintf("[INFO   %s] %s", name, l)
+					if c.Bool("info") {
+						line = fmt.Sprintf("[INFO   %s] %s", name, l)
+					}
 				case err := <-channels.Error:
 					line = fmt.Sprintf("[ERROR  %s] %s", name, err.Error())
 				}
