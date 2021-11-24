@@ -1,9 +1,11 @@
-all: build
+all: vm-spinner
 
-.PHONY: build
-build:
+GO ?= go
+
+.PHONY: vm-spinner
+vm-spinner: main.go vagrant.go
 	@mkdir -p build
-	@$(GO) build -o build/vm-spinner
+	@$(GO) build -o build/vm-spinner *.go 
 
 .PHONY: clean
 clean:
