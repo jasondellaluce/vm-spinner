@@ -220,7 +220,7 @@ func runApp(c *cli.Context) error {
 				}
 
 				// print the line only if it matches the filter or if no filter is specified
-				if len(line) > 0 && (filter == nil || filter.MatchString(err.Error())) {
+				if len(line) > 0 && (filter == nil || filter.MatchString(line)) {
 					println(line)
 				}
 			}
