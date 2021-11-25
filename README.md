@@ -21,5 +21,5 @@ Creating a VM and installing Docker.
 
 Running a local script in two VM in parallel, by specifying the provisioned resources for each VM:
 ```bash
-./vm-spinner -p "virtualbox" -i "ubuntu/focal64;ubuntu/bionic64" -f "./script.sh" --cpus=2 --parallelism=2 --memory=4096  
+./vm-spinner -p "virtualbox" -i "ubuntu/focal64,ubuntu/bionic64" -f "./script.sh" --cpus=2 --parallelism=2 --memory=4096  
 ```
