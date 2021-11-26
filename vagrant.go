@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/koding/vagrantutil"
 )
@@ -136,6 +138,9 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = destroyVagrantMachine(vagrant, conf, debug, info)
 	}()
 
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
 	// Start up the VM
 	sendStr(debug, "Starting Vagrant VM for '"+conf.Name+"'")
 	up, err := vagrant.Up()
@@ -147,12 +152,9 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = haltVagrantMachine(vagrant, conf, debug, info)
 	}()
 
-	for line := range up {
-		if line.Error != nil {
-			resErr = line.Error
-			return
-		}
-		sendStr(info, line.Line)
+	killedBySignal := selectHandleSig(up, sigs, info)
+	if killedBySignal {
+		return
 	}
 
 	// Establish a SSH connection and run command
@@ -162,9 +164,22 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = err
 		return
 	}
-	for line := range ssh {
-		sendStr(output, line.Line)
-	}
 
+	_ = selectHandleSig(ssh, sigs, output)
 	return
+}
+
+// selectHandleSig returns whether a signal was received
+func selectHandleSig(ch <-chan *vagrantutil.CommandOutput, sigCh chan os.Signal, out chan<- string) bool {
+	for {
+		select {
+		case line, ok := <-ch:
+			if !ok {
+				return false
+			}
+			sendStr(out, line.Line)
+		case <-sigCh:
+			return true
+		}
+	}
 }
