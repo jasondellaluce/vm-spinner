@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/olekukonko/tablewriter"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/semaphore"
 )
@@ -75,16 +77,27 @@ func main() {
 			Value: defaultParallelism(),
 		},
 		cli.BoolFlag{
-			Name:  "info,I",
-			Usage: "Include info-level lines in the output.",
+			Name:  "log-json",
+			Usage: "Whether to log output in json format.",
+		},
+		cli.StringFlag{
+			Name:  "log-level",
+			Usage: "Log level, between { trace, debug, info }. Defaults to debug.",
+		},
+		cli.StringFlag{
+			Name:  "log-output",
+			Usage: "Log output filename; by default stdout.",
 		},
 		cli.BoolFlag{
-			Name:  "debug,D",
-			Usage: "Include debug-level lines in the output.",
+			Name:  "summary-matrix",
+			Usage: "Print a summary matrix using the filtered (through --filter) line as results for each vm.",
 		},
 	}
 
-	app.Run(os.Args)
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func validateParameters(c *cli.Context) error {
@@ -102,6 +115,10 @@ func validateParameters(c *cli.Context) error {
 
 	if len(c.String("cmdline")) == 0 && !c.Bool("cmdstdin") && len(c.String("cmdfile")) == 0 {
 		return fmt.Errorf("one of the following must be specified: cmdline, cmdstdin, cmdfile")
+	}
+
+	if c.Bool("summary-matrix") && len(c.String("filter")) == 0 {
+		return fmt.Errorf("'--summary-matrix' requires '--filter' option")
 	}
 
 	return nil
@@ -137,11 +154,44 @@ func getCommand(c *cli.Context) (string, error) {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
-			cmd += scanner.Text() + "\n"
+			text := scanner.Text()
+			// Skip shabang if a full script was used
+			if !strings.HasPrefix(text, "#!") {
+				cmd += scanner.Text() + "\n"
+			}
 		}
 	}
 
 	return cmd, nil
+}
+
+func initLog(c *cli.Context) error {
+	// Log as JSON instead of the default ASCII formatter.
+	if c.Bool("log-json") {
+		log.SetFormatter(&log.JSONFormatter{})
+	}
+
+	out := os.Stdout
+	if len(c.String("log-output")) > 0 {
+		var err error
+		out, err = os.Open(c.String("output"))
+		if err != nil {
+			return err
+		}
+	}
+	log.SetOutput(out)
+
+	switch c.String("log-level") {
+	case "trace":
+		log.SetLevel(log.TraceLevel)
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
+	default:
+		log.SetLevel(log.DebugLevel)
+	}
+	return nil
 }
 
 func runApp(c *cli.Context) error {
@@ -157,10 +207,31 @@ func runApp(c *cli.Context) error {
 		return err
 	}
 
+	err = initLog(c)
+	if err != nil {
+		return err
+	}
+
 	// get the user-specified regex filter
 	var filter *regexp.Regexp
 	if len(c.String("filter")) > 0 {
 		filter = regexp.MustCompile(c.String("filter"))
+	}
+
+	// Goroutine to handle result summary matrix, if needed
+	var resWg sync.WaitGroup
+	resCh := make(chan []string)
+	if c.Bool("summary-matrix") {
+		resWg.Add(1)
+		go func() {
+			table := tablewriter.NewWriter(os.Stdout)
+			table.SetHeader([]string{"VM", "RES"})
+			for res := range resCh {
+				table.Append(res)
+			}
+			table.Render() // Send output
+			resWg.Done()
+		}()
 	}
 
 	// prepare sync primitives.
@@ -198,30 +269,32 @@ func runApp(c *cli.Context) error {
 			}
 
 			// select the VM outputs
-			var line string
 			channels := RunVirtualMachine(conf)
 			for {
-				line = ""
+				logger := log.WithFields(log.Fields{"vm": name})
+				var l string
+				var lvl log.Level
 				select {
 				case <-channels.Done:
 					return
-				case l := <-channels.CmdOutput:
-					line = fmt.Sprintf("[OUTPUT %s] %s", name, l)
-				case l := <-channels.Debug:
-					if c.Bool("debug") {
-						line = fmt.Sprintf("[DEBUG  %s] %s", name, l)
-					}
-				case l := <-channels.Info:
-					if c.Bool("info") {
-						line = fmt.Sprintf("[INFO   %s] %s", name, l)
-					}
-				case err := <-channels.Error:
-					line = fmt.Sprintf("[ERROR  %s] %s", name, err.Error())
+				case l = <-channels.CmdOutput:
+					lvl = log.InfoLevel
+				case l = <-channels.Debug:
+					lvl = log.TraceLevel
+				case l = <-channels.Info:
+					lvl = log.DebugLevel
+				case err = <-channels.Error:
+					lvl = log.ErrorLevel
+					l = err.Error()
 				}
 
 				// print the line only if it matches the filter or if no filter is specified
-				if len(line) > 0 && (filter == nil || filter.MatchString(line)) {
-					println(line)
+				if len(l) > 0 && (filter == nil || filter.MatchString(l)) {
+					logger.Log(lvl, l)
+
+					if filter != nil && c.Bool("summary-matrix") {
+						resCh <- []string{name, l }
+					}
 				}
 			}
 		}()
@@ -229,5 +302,11 @@ func runApp(c *cli.Context) error {
 
 	// wait for all workers
 	wg.Wait()
+
+	// Close summary matrix channel and wait
+	// for it to eventually print the summary
+	close(resCh)
+	resWg.Wait()
+
 	return nil
 }

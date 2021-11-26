@@ -79,9 +79,37 @@ func RunVirtualMachine(conf *VMConfig) *VMChannels {
 	}
 }
 
-func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resErr error) {
-	isUp := false
+func destroyVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, info chan<- string) error {
+	sendStr(debug, "Destroying Vagrant VM for '"+conf.Name+"'")
+	destroy, err := vagrant.Destroy()
+	if err != nil {
+		return err
+	}
+	for line := range destroy {
+		if line.Error != nil {
+			return line.Error
+		}
+		sendStr(info, line.Line)
+	}
+	return nil
+}
 
+func haltVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, info chan<- string) error {
+	sendStr(debug, "Halting Vagrant VM for '"+conf.Name+"'")
+	halt, err := vagrant.Halt()
+	if err != nil {
+		return err
+	}
+	for line := range halt {
+		if line.Error != nil {
+			return line.Error
+		}
+		sendStr(info, line.Line)
+	}
+	return nil
+}
+
+func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resErr error) {
 	// Create Vagrant config file
 	sendStr(debug, "Initializing Vagrant configuration for '"+conf.Name+"'")
 	vagrant, err := vagrantutil.NewVagrant(conf.Name)
@@ -89,7 +117,7 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = err
 		return
 	}
-
+	
 	// Create Vagrant VM
 	sendStr(debug, "Creating Vagrant VM  for '"+conf.Name+"' on '"+conf.ProviderName+"' provider")
 	vagrantfile := fmt.Sprintf(
@@ -104,39 +132,8 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = err
 		return
 	}
-
-	// Once the VM is created, we need to destroy it.
-	// If the VM has been started, it must be halted first
 	defer func() {
-		if isUp {
-			sendStr(debug, "Halting Vagrant VM for '"+conf.Name+"'")
-			halt, err := vagrant.Halt()
-			if err != nil {
-				resErr = err
-				return
-			}
-			for line := range halt {
-				if line.Error != nil {
-					resErr = line.Error
-					return
-				}
-				sendStr(info, line.Line)
-			}
-		}
-
-		sendStr(debug, "Destroying Vagrant VM for '"+conf.Name+"'")
-		destroy, err := vagrant.Destroy()
-		if err != nil {
-			resErr = err
-			return
-		}
-		for line := range destroy {
-			if line.Error != nil {
-				resErr = line.Error
-				return
-			}
-			sendStr(info, line.Line)
-		}
+		resErr = destroyVagrantMachine(vagrant, conf, debug, info)
 	}()
 
 	// Start up the VM
@@ -146,7 +143,10 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = err
 		return
 	}
-	isUp = true
+	defer func() {
+		resErr = haltVagrantMachine(vagrant, conf, debug, info)
+	}()
+
 	for line := range up {
 		if line.Error != nil {
 			resErr = line.Error
