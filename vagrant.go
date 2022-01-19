@@ -119,7 +119,7 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = err
 		return
 	}
-	
+
 	// Create Vagrant VM
 	sendStr(debug, "Creating Vagrant VM  for '"+conf.Name+"' on '"+conf.ProviderName+"' provider")
 	vagrantfile := fmt.Sprintf(
