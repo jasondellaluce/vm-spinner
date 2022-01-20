@@ -5,6 +5,14 @@ import (
 	"github.com/urfave/cli"
 )
 
+const (
+	VMJobBpf    = "bpf"
+	VMJobCmd    = "cmd"
+	VMJobStdin  = "stdin"
+	VMJobScript = "script"
+	VMJobKmod   = "kmod"
+)
+
 type VMOutput struct {
 	VM   string
 	Line string
@@ -13,8 +21,6 @@ type VMOutput struct {
 type VMJob interface {
 	// Cmd returns cmd to be used
 	Cmd() string
-	// Images returns list of images to be used
-	Images() []string
 	// Process processes each output line
 	Process(VMOutput)
 	// Done is called at the end of program, to let job flush its data if needed
@@ -24,15 +30,15 @@ type VMJob interface {
 func NewVMJob(c *cli.Context) (VMJob, error) {
 	jobType := c.Command.Name
 	switch jobType {
-	case "bpf":
+	case VMJobBpf:
 		return newBpfJob(c)
-	case "cmd":
+	case VMJobCmd:
 		return newCmdLineJob(c)
-	case "stdin":
-		return newStdinJob(c)
-	case "script":
+	case VMJobStdin:
+		return newStdinJob()
+	case VMJobScript:
 		return newScriptJob(c)
-	case "kmod":
+	case VMJobKmod:
 		return newKmodJob(c)
 	}
 	return nil, fmt.Errorf("job '%s' not supported", jobType)

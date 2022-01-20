@@ -2,16 +2,11 @@ package vmjobs
 
 import (
 	"bufio"
-	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"os"
 )
 
 func newScriptJob(c *cli.Context) (VMJob, error) {
-	if !c.IsSet("file") {
-		log.Fatalf("'file' argument required for script job.")
-	}
-
 	file, err := os.Open(c.String("file"))
 	if err != nil {
 		return nil, err
@@ -24,5 +19,5 @@ func newScriptJob(c *cli.Context) (VMJob, error) {
 		cmd += scanner.Text() + "\n"
 	}
 
-	return cmdLineJobFromCmd(cmd, c)
+	return cmdLineJobFromCmd(cmd)
 }

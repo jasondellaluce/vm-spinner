@@ -3,34 +3,25 @@ package vmjobs
 import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"strings"
 )
 
 type cmdLineJob struct {
-	cmd    string
-	images []string
+	cmd string
 }
 
 func newCmdLineJob(c *cli.Context) (VMJob, error) {
-	if !c.IsSet("line") {
-		log.Fatalf("'line' argument required for cmd job.")
-	}
-	return cmdLineJobFromCmd(c.String("line"), c)
+	return cmdLineJobFromCmd(c.String("line"))
 }
 
-func cmdLineJobFromCmd(cmd string, c *cli.Context) (VMJob, error) {
-	if !c.GlobalIsSet("images") {
-		log.Fatalf("'images' argument required for cmd job.")
+func cmdLineJobFromCmd(cmd string) (VMJob, error) {
+	if len(cmd) == 0 {
+		log.Fatalf("provided command is empty.")
 	}
-	return &cmdLineJob{cmd: cmd, images: strings.Split(c.GlobalString("images"), ",")}, nil
+	return &cmdLineJob{cmd: cmd}, nil
 }
 
 func (j *cmdLineJob) Cmd() string {
 	return j.cmd
-}
-
-func (j *cmdLineJob) Images() []string {
-	return j.images
 }
 
 func (j *cmdLineJob) Process(VMOutput) {

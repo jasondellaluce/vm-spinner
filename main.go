@@ -29,12 +29,20 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
+	// Each sub-command has its own "image" parameter, because some command
+	// has a default value, therefore not needing a required flag,
+	// while others have no default values
 	app.Commands = []cli.Command{
 		{
-			Name:   "bpf",
+			Name:   vmjobs.VMJobBpf,
 			Usage:  "Run bpf build + verifier job.",
 			Action: runApp,
 			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:  "image,i",
+					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Value: &vmjobs.BpfDefaultImages,
+				},
 				cli.StringFlag{
 					Name:  "commithash",
 					Usage: "falcosecurity/libs commit hash to run the test against.",
@@ -42,10 +50,15 @@ func main() {
 			},
 		},
 		{
-			Name:   "kmod",
+			Name:   vmjobs.VMJobKmod,
 			Usage:  "Run kmod build job.",
 			Action: runApp,
 			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:  "image,i",
+					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Value: &vmjobs.KmodDefaultImages,
+				},
 				cli.StringFlag{
 					Name:  "commithash",
 					Usage: "falcosecurity/libs commit hash to run the test against.",
@@ -53,38 +66,53 @@ func main() {
 			},
 		},
 		{
-			Name:   "cmd",
+			Name:   vmjobs.VMJobCmd,
 			Usage:  "Run a simple cmd line job.",
 			Action: runApp,
 			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
 				cli.StringFlag{
-					Name:  "line",
-					Usage: "command that runs in each VM, as a command line parameter.",
+					Name:     "line",
+					Usage:    "command that runs in each VM, as a command line parameter.",
+					Required: true,
 				},
 			},
 		},
 		{
-			Name:   "stdin",
+			Name:   vmjobs.VMJobStdin,
 			Usage:  "Run a simple cmd line job read from stdin.",
 			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
+			},
 		},
 		{
-			Name:   "script",
+			Name:   vmjobs.VMJobScript,
 			Usage:  "Run a simple script job read from file.",
 			Action: runApp,
 			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
 				cli.StringFlag{
-					Name:  "file",
-					Usage: "script that runs in each VM, as a filepath.",
+					Name:     "file",
+					Usage:    "script that runs in each VM, as a filepath.",
+					Required: true,
 				},
 			},
 		},
 	}
 	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:  "images,i",
-			Usage: "Comma-separated list of the VM image names to run the command on. Some jobs provide a default set of images (eg: bpf, kmod).",
-		},
 		cli.StringFlag{
 			Name:  "provider,p",
 			Usage: "Vagrant provider name.",
@@ -111,7 +139,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "log.level",
-			Usage: "Log level, between { trace, debug, info }.",
+			Usage: "Log level, between { trace, debug, info, error }.",
 			Value: "debug",
 		},
 		cli.StringFlag{
@@ -138,6 +166,7 @@ func validateParameters(c *cli.Context) error {
 	if c.GlobalInt("parallelism")*c.GlobalInt("cpus") > runtime.NumCPU() {
 		fmt.Printf("warning: number of parallel cpus (cpus * parallelism %d) exceeds the number of CPUs available (%d)\n", c.Int("parallelism")*c.Int("cpus"), runtime.NumCPU())
 	}
+
 	return nil
 }
 
@@ -164,6 +193,8 @@ func initLog(c *cli.Context) error {
 		log.SetLevel(log.DebugLevel)
 	case "info":
 		log.SetLevel(log.InfoLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
 	default:
 		log.SetLevel(log.DebugLevel)
 	}
@@ -205,8 +236,7 @@ func runApp(c *cli.Context) error {
 	var wg sync.WaitGroup
 	sm := semaphore.NewWeighted(int64(c.GlobalInt("parallelism")))
 
-	// iterate through all the specified VM images
-	images := job.Images()
+	images := c.StringSlice("image")
 	log.Infof("Running on %v images", images)
 	for i, image := range images {
 		wg.Add(1)
