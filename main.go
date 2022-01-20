@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
 	"os"
-	"regexp"
 	"runtime"
-	"strings"
 	"sync"
 
-	"github.com/olekukonko/tablewriter"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/semaphore"
@@ -32,34 +29,94 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
-	app.Action = runApp
-	app.UsageText = "vm-spinner [options...]"
+	// Each sub-command has its own "image" parameter, because some command
+	// has a default value, therefore not needing a required flag,
+	// while others have no default values
+	app.Commands = []cli.Command{
+		{
+			Name:   vmjobs.VMJobBpf,
+			Usage:  "Run bpf build + verifier job.",
+			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:  "image,i",
+					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Value: &vmjobs.BpfDefaultImages,
+				},
+				cli.StringFlag{
+					Name:  "commithash",
+					Usage: "falcosecurity/libs commit hash to run the test against.",
+				},
+			},
+		},
+		{
+			Name:   vmjobs.VMJobKmod,
+			Usage:  "Run kmod build job.",
+			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:  "image,i",
+					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Value: &vmjobs.KmodDefaultImages,
+				},
+				cli.StringFlag{
+					Name:  "commithash",
+					Usage: "falcosecurity/libs commit hash to run the test against.",
+				},
+			},
+		},
+		{
+			Name:   vmjobs.VMJobCmd,
+			Usage:  "Run a simple cmd line job.",
+			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
+				cli.StringFlag{
+					Name:     "line",
+					Usage:    "command that runs in each VM, as a command line parameter.",
+					Required: true,
+				},
+			},
+		},
+		{
+			Name:   vmjobs.VMJobStdin,
+			Usage:  "Run a simple cmd line job read from stdin.",
+			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
+			},
+		},
+		{
+			Name:   vmjobs.VMJobScript,
+			Usage:  "Run a simple script job read from file.",
+			Action: runApp,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
+					Required: true,
+				},
+				cli.StringFlag{
+					Name:     "file",
+					Usage:    "script that runs in each VM, as a filepath.",
+					Required: true,
+				},
+			},
+		},
+	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:     "images,i",
-			Usage:    "Comma-separated list of the VM image names to run the command on.",
-			Required: true,
-		},
-		cli.StringFlag{
-			Name:     "provider,p",
-			Usage:    "Vagrant provider name.",
-			Required: true,
-		},
-		cli.StringFlag{
-			Name:  "filter",
-			Usage: "If specified, only the output lines matching the filtering regex will be printed.",
-		},
-		cli.StringFlag{
-			Name:  "cmdline,c",
-			Usage: "The command that runs in each VM, specified as a command line parameter.",
-		},
-		cli.StringFlag{
-			Name:  "cmdfile,f",
-			Usage: "The command that runs in each VM, specified as a filepath.",
-		},
-		cli.BoolFlag{
-			Name:  "cmdstdin",
-			Usage: "The command that runs in each VM, specified through stdin.",
+			Name:  "provider,p",
+			Usage: "Vagrant provider name.",
+			Value: "virtualbox",
 		},
 		cli.IntFlag{
 			Name:  "memory",
@@ -77,20 +134,17 @@ func main() {
 			Value: defaultParallelism(),
 		},
 		cli.BoolFlag{
-			Name:  "log-json",
+			Name:  "log.json",
 			Usage: "Whether to log output in json format.",
 		},
 		cli.StringFlag{
-			Name:  "log-level",
-			Usage: "Log level, between { trace, debug, info }. Defaults to debug.",
+			Name:  "log.level",
+			Usage: "Log level, between { trace, debug, info, error }.",
+			Value: "debug",
 		},
 		cli.StringFlag{
-			Name:  "log-output",
-			Usage: "Log output filename; by default stdout.",
-		},
-		cli.BoolFlag{
-			Name:  "summary-matrix",
-			Usage: "Print a summary matrix using the filtered (through --filter) line as results for each vm.",
+			Name:  "log.output",
+			Usage: "Log output filename. If empty, stdout will be used.",
 		},
 	}
 
@@ -101,93 +155,46 @@ func main() {
 }
 
 func validateParameters(c *cli.Context) error {
-	if c.Int("cpus") > runtime.NumCPU() {
+	if c.GlobalInt("cpus") > runtime.NumCPU() {
 		return fmt.Errorf("number of CPUs for each VM (%d) exceeds the number of CPUs available (%d)", c.Int("cpus"), runtime.NumCPU())
 	}
 
-	if c.Int("parallelism") > runtime.NumCPU() {
+	if c.GlobalInt("parallelism") > runtime.NumCPU() {
 		return fmt.Errorf("number of parallel VMs (%d) exceeds the number of CPUs available (%d)", c.Int("parallelism"), runtime.NumCPU())
 	}
 
-	if c.Int("parallelism")*c.Int("cpus") > runtime.NumCPU() {
+	if c.GlobalInt("parallelism")*c.GlobalInt("cpus") > runtime.NumCPU() {
 		fmt.Printf("warning: number of parallel cpus (cpus * parallelism %d) exceeds the number of CPUs available (%d)\n", c.Int("parallelism")*c.Int("cpus"), runtime.NumCPU())
-	}
-
-	if len(c.String("cmdline")) == 0 && !c.Bool("cmdstdin") && len(c.String("cmdfile")) == 0 {
-		return fmt.Errorf("one of the following must be specified: cmdline, cmdstdin, cmdfile")
-	}
-
-	if c.Bool("summary-matrix") && len(c.String("filter")) == 0 {
-		return fmt.Errorf("'--summary-matrix' requires '--filter' option")
 	}
 
 	return nil
 }
 
-func getCommand(c *cli.Context) (string, error) {
-	errOverlap := fmt.Errorf("only one of the following must be specified: cmdline, cmdstdin, cmdfile")
-	var cmd string
-
-	if len(c.String("cmdline")) > 0 {
-		cmd = c.String("cmdline")
-	}
-
-	if c.Bool("cmdstdin") {
-		if len(cmd) > 0 {
-			return "", errOverlap
-		}
-		cmd = ""
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			cmd += scanner.Text() + "\n"
-		}
-	}
-
-	if len(c.String("cmdfile")) > 0 {
-		if len(cmd) > 0 {
-			return "", errOverlap
-		}
-		file, err := os.Open(c.String("cmdfile"))
-		if err != nil {
-			return "", err
-		}
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			text := scanner.Text()
-			// Skip shabang if a full script was used
-			if !strings.HasPrefix(text, "#!") {
-				cmd += scanner.Text() + "\n"
-			}
-		}
-	}
-
-	return cmd, nil
-}
-
 func initLog(c *cli.Context) error {
 	// Log as JSON instead of the default ASCII formatter.
-	if c.Bool("log-json") {
+	if c.GlobalBool("log.json") {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 
 	out := os.Stdout
-	if len(c.String("log-output")) > 0 {
+	if len(c.GlobalString("log.output")) > 0 {
 		var err error
-		out, err = os.Open(c.String("output"))
+		out, err = os.OpenFile(c.GlobalString("log-output"), os.O_RDWR|os.O_CREATE, 0644)
 		if err != nil {
 			return err
 		}
 	}
 	log.SetOutput(out)
 
-	switch c.String("log-level") {
+	switch c.GlobalString("log.level") {
 	case "trace":
 		log.SetLevel(log.TraceLevel)
 	case "debug":
 		log.SetLevel(log.DebugLevel)
 	case "info":
 		log.SetLevel(log.InfoLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
 	default:
 		log.SetLevel(log.DebugLevel)
 	}
@@ -195,14 +202,7 @@ func initLog(c *cli.Context) error {
 }
 
 func runApp(c *cli.Context) error {
-	// Validate parameters
 	err := validateParameters(c)
-	if err != nil {
-		return err
-	}
-
-	// read command to run on each VM
-	command, err := getCommand(c)
 	if err != nil {
 		return err
 	}
@@ -212,27 +212,21 @@ func runApp(c *cli.Context) error {
 		return err
 	}
 
-	// get the user-specified regex filter
-	var filter *regexp.Regexp
-	if len(c.String("filter")) > 0 {
-		filter = regexp.MustCompile(c.String("filter"))
+	job, err := vmjobs.NewVMJob(c)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// Goroutine to handle result summary matrix, if needed
+	// Goroutine to handle result in job plugin
 	var resWg sync.WaitGroup
-	resCh := make(chan []string)
-	if c.Bool("summary-matrix") {
-		resWg.Add(1)
-		go func() {
-			table := tablewriter.NewWriter(os.Stdout)
-			table.SetHeader([]string{"VM", "RES"})
-			for res := range resCh {
-				table.Append(res)
-			}
-			table.Render() // Send output
-			resWg.Done()
-		}()
-	}
+	resCh := make(chan vmjobs.VMOutput)
+	resWg.Add(1)
+	go func() {
+		for res := range resCh {
+			job.Process(res)
+		}
+		resWg.Done()
+	}()
 
 	// prepare sync primitives.
 	// the waitgrup is used to run all the VM in parallel, and to
@@ -240,15 +234,24 @@ func runApp(c *cli.Context) error {
 	// the semapthore is used to ensure that the parallelism upper
 	// limit gets respected.
 	var wg sync.WaitGroup
-	sm := semaphore.NewWeighted(int64(c.Int("parallelism")))
+	sm := semaphore.NewWeighted(int64(c.GlobalInt("parallelism")))
 
-	// iterate through all the specified VM images
-	images := strings.Split(c.String("images"), ",")
+	images := c.StringSlice("image")
+	log.Infof("Running on %v images", images)
 	for i, image := range images {
 		wg.Add(1)
 		sm.Acquire(context.Background(), 1)
-		imageName := image
-		imageIndex := i
+
+		// launch the VM for this image
+		name := fmt.Sprintf("/tmp/%s-%d", image, i)
+		conf := &VMConfig{
+			Name:         name,
+			BoxName:      image,
+			ProviderName: c.GlobalString("provider"),
+			CPUs:         c.GlobalInt("cpus"),
+			Memory:       c.GlobalInt("memory"),
+			Command:      job.Cmd(),
+		}
 
 		// worker goroutine
 		go func() {
@@ -257,44 +260,23 @@ func runApp(c *cli.Context) error {
 				wg.Done()
 			}()
 
-			// launch the VM for this image
-			name := fmt.Sprintf("/tmp/%s-%d", imageName, imageIndex)
-			conf := &VMConfig{
-				Name:         name,
-				BoxName:      imageName,
-				ProviderName: c.String("provider"),
-				CPUs:         c.Int("cpus"),
-				Memory:       c.Int("memory"),
-				Command:      command,
-			}
-
 			// select the VM outputs
 			channels := RunVirtualMachine(conf)
 			for {
-				logger := log.WithFields(log.Fields{"vm": name})
-				var l string
-				var lvl log.Level
+				logger := log.WithFields(log.Fields{"vm": conf.BoxName})
 				select {
 				case <-channels.Done:
+					logger.Info("Job Finished.")
 					return
-				case l = <-channels.CmdOutput:
-					lvl = log.InfoLevel
-				case l = <-channels.Debug:
-					lvl = log.TraceLevel
-				case l = <-channels.Info:
-					lvl = log.DebugLevel
-				case err = <-channels.Error:
-					lvl = log.ErrorLevel
-					l = err.Error()
-				}
-
-				// print the line only if it matches the filter or if no filter is specified
-				if len(l) > 0 && (filter == nil || filter.MatchString(l)) {
-					logger.Log(lvl, l)
-
-					if filter != nil && c.Bool("summary-matrix") {
-						resCh <- []string{name, l }
-					}
+				case l := <-channels.CmdOutput:
+					logger.Info(l)
+					resCh <- vmjobs.VMOutput{VM: conf.BoxName, Line: l}
+				case l := <-channels.Debug:
+					logger.Trace(l)
+				case l := <-channels.Info:
+					logger.Debug(l)
+				case err := <-channels.Error:
+					logger.Error(err.Error())
 				}
 			}
 		}()
@@ -307,6 +289,9 @@ func runApp(c *cli.Context) error {
 	// for it to eventually print the summary
 	close(resCh)
 	resWg.Wait()
+
+	// Notify job that we're done
+	job.Done()
 
 	return nil
 }
