@@ -46,8 +46,14 @@ func main() {
 					Value: &vmjobs.BpfDefaultImages,
 				},
 				cli.StringFlag{
+					Name:  "forkname",
+					Usage: "libs fork to clone from.",
+					Value: "falcosecurity",
+				},
+				cli.StringFlag{
 					Name:  "commithash",
-					Usage: "falcosecurity/libs commit hash to run the test against.",
+					Usage: "libs commit hash to run the test against.",
+					Value: "master",
 				},
 			},
 		},
@@ -62,8 +68,14 @@ func main() {
 					Value: &vmjobs.KmodDefaultImages,
 				},
 				cli.StringFlag{
+					Name:  "forkname",
+					Usage: "libs fork to clone from.",
+					Value: "falcosecurity",
+				},
+				cli.StringFlag{
 					Name:  "commithash",
-					Usage: "falcosecurity/libs commit hash to run the test against.",
+					Usage: "libs commit hash to run the test against.",
+					Value: "master",
 				},
 			},
 		},
