@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
 	"os"
+	"os/signal"
 	"runtime"
 	"sync"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -228,6 +230,12 @@ func runApp(c *cli.Context) error {
 		resWg.Done()
 	}()
 
+	// Unlock sm.Acquire() call killing its context on external signals, allowing us
+	// to avoid situations when some images are waiting on sm.Acquire() call,
+	// and current images gets killed by an external signal (managed in vagrant.go),
+	// we proceed to process subsequent images because main thread did not notice anything.
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+
 	// prepare sync primitives.
 	// the waitgrup is used to run all the VM in parallel, and to
 	// join with each worker goroutine once their job is finished.
@@ -239,8 +247,13 @@ func runApp(c *cli.Context) error {
 	images := c.StringSlice("image")
 	log.Infof("Running on %v images", images)
 	for i, image := range images {
+		smErr := sm.Acquire(ctx, 1)
+		// Acquire may return non-nil err even if ctx.Done() is triggered
+		if smErr != nil || ctx.Err() != nil {
+			break
+		}
+
 		wg.Add(1)
-		sm.Acquire(context.Background(), 1)
 
 		// launch the VM for this image
 		name := fmt.Sprintf("/tmp/%s-%d", image, i)
@@ -261,7 +274,7 @@ func runApp(c *cli.Context) error {
 			}()
 
 			// select the VM outputs
-			channels := RunVirtualMachine(conf)
+			channels := RunVirtualMachine(ctx, conf)
 			for {
 				logger := log.WithFields(log.Fields{"vm": conf.BoxName})
 				select {
