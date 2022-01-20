@@ -51,8 +51,9 @@ install_deps() {
 }
 
 build_and_run() {
-    git clone https://github.com/falcosecurity/libs.git && cd libs
-	%s
+    git clone https://github.com/%s/libs.git && cd libs
+	  git checkout %s
+
     mkdir build && cd build
 
     if [ "$need_musl" -eq "1" ]

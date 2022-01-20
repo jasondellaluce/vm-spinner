@@ -54,7 +54,7 @@ func initKmodInfoMap(images []string) map[string]*kmodInfo {
 }
 
 func (j *kmodJob) Cmd() string {
-	return fmt.Sprintf(kmodCmdFmt, j.checkoutCmd)
+	return fmt.Sprintf(kmodCmdFmt, j.forkName, j.commitHash)
 }
 
 func (j *kmodJob) Process(output VMOutput) {

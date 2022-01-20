@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"github.com/olekukonko/tablewriter"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"os"
 	"strconv"
@@ -19,8 +20,9 @@ type bpfInfo struct {
 }
 
 type buildTestJob struct {
-	table       *tablewriter.Table
-	checkoutCmd string
+	table      *tablewriter.Table
+	commitHash string
+	forkName   string
 }
 
 type bpfJob struct {
@@ -42,9 +44,14 @@ var BpfDefaultImages = cli.StringSlice{
 var bpfCmdFmt string
 
 func newBuildTestJob(c *cli.Context, headers []string) buildTestJob {
-	var checkoutCmd string
-	if c.IsSet("commithash") {
-		checkoutCmd = fmt.Sprintf("git checkout %s", c.String("commithash"))
+	commitHash := c.String("commithash")
+	forkName := c.String("forkname")
+
+	if len(commitHash) == 0 {
+		log.Fatalf("empty 'commithash' value")
+	}
+	if len(forkName) == 0 {
+		log.Fatalf("empty 'forkname' value")
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
@@ -53,8 +60,9 @@ func newBuildTestJob(c *cli.Context, headers []string) buildTestJob {
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
 	return buildTestJob{
-		table:       table,
-		checkoutCmd: checkoutCmd,
+		table:      table,
+		commitHash: commitHash,
+		forkName:   forkName,
 	}
 }
 
@@ -82,7 +90,7 @@ func initBpfInfoMap(images []string) map[string]*bpfInfo {
 }
 
 func (j *bpfJob) Cmd() string {
-	return fmt.Sprintf(bpfCmdFmt, j.checkoutCmd)
+	return fmt.Sprintf(bpfCmdFmt, j.forkName, j.commitHash)
 }
 
 func (j *bpfJob) Process(output VMOutput) {

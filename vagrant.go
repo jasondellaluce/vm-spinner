@@ -1,12 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/koding/vagrantutil"
+	"os"
 )
 
 const fmtVagrantfile = `
@@ -51,7 +49,7 @@ func sendErr(c chan<- error, v error) {
 	}
 }
 
-func RunVirtualMachine(conf *VMConfig) *VMChannels {
+func RunVirtualMachine(ctx context.Context, conf *VMConfig) *VMChannels {
 	output := make(chan string)
 	debug := make(chan string)
 	info := make(chan string)
@@ -59,7 +57,7 @@ func RunVirtualMachine(conf *VMConfig) *VMChannels {
 	done := make(chan bool)
 
 	go func() {
-		vagrantErr := runVagrantMachine(conf, output, debug, info)
+		vagrantErr := runVagrantMachine(ctx, conf, output, debug, info)
 		if vagrantErr != nil {
 			sendErr(err, vagrantErr)
 		}
@@ -111,7 +109,7 @@ func haltVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, inf
 	return nil
 }
 
-func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resErr error) {
+func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info chan<- string) (resErr error) {
 	// Create Vagrant config file
 	sendStr(debug, "Initializing Vagrant configuration for '"+conf.Name+"'")
 	vagrant, err := vagrantutil.NewVagrant(conf.Name)
@@ -138,9 +136,6 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = destroyVagrantMachine(vagrant, conf, debug, info)
 	}()
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
 	// Start up the VM
 	sendStr(debug, "Starting Vagrant VM for '"+conf.Name+"'")
 	up, err := vagrant.Up()
@@ -152,7 +147,7 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		resErr = haltVagrantMachine(vagrant, conf, debug, info)
 	}()
 
-	killedBySignal := selectHandleSig(up, sigs, info)
+	killedBySignal := selectHandleSig(up, ctx, info)
 	if killedBySignal {
 		return
 	}
@@ -165,12 +160,12 @@ func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resEr
 		return
 	}
 
-	_ = selectHandleSig(ssh, sigs, output)
+	_ = selectHandleSig(ssh, ctx, output)
 	return
 }
 
-// selectHandleSig returns whether a signal was received
-func selectHandleSig(ch <-chan *vagrantutil.CommandOutput, sigCh chan os.Signal, out chan<- string) bool {
+// selectHandleSig returns whether ctx done was received
+func selectHandleSig(ch <-chan *vagrantutil.CommandOutput, ctx context.Context, out chan<- string) bool {
 	for {
 		select {
 		case line, ok := <-ch:
@@ -178,7 +173,7 @@ func selectHandleSig(ch <-chan *vagrantutil.CommandOutput, sigCh chan os.Signal,
 				return false
 			}
 			sendStr(out, line.Line)
-		case <-sigCh:
+		case <-ctx.Done():
 			return true
 		}
 	}
