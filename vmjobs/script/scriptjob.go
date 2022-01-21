@@ -1,13 +1,20 @@
-package vmjobs
+package script
 
 import (
 	"bufio"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
 	"github.com/urfave/cli"
 	"os"
 )
 
 type scriptJob struct {
 	cmd string
+}
+
+func init() {
+	j := &scriptJob{}
+	_ = vmjobs.RegisterJob(j.String(), j)
 }
 
 func (j *scriptJob) String() string {
@@ -20,11 +27,6 @@ func (j *scriptJob) Desc() string {
 
 func (j *scriptJob) Flags() []cli.Flag {
 	return []cli.Flag{
-		cli.StringSliceFlag{
-			Name:     "image,i",
-			Usage:    imageParamDesc,
-			Required: true,
-		},
 		cli.StringFlag{
 			Name:     "file",
 			Usage:    "script that runs in each VM, as a filepath.",
@@ -46,7 +48,7 @@ func (j *scriptJob) ParseCfg(c *cli.Context) error {
 	}
 
 	if len(j.cmd) == 0 {
-		return emptyCmdErr
+		return cmd.EmptyCmdErr
 	}
 	return nil
 }
@@ -55,7 +57,7 @@ func (j *scriptJob) Cmd() string {
 	return j.cmd
 }
 
-func (j *scriptJob) Process(VMOutput) {
+func (j *scriptJob) Process(_, _ string) {
 
 }
 

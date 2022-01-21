@@ -1,6 +1,8 @@
-package vmjobs
+package kmod
 
 import (
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
 	"github.com/urfave/cli"
 	"strconv"
 	"strings"
@@ -13,7 +15,7 @@ type kmodInfo struct {
 }
 
 type kmodJob struct {
-	buildTestJob
+	bpf.BuildTestJob
 	kmodInfos map[string]*kmodInfo
 }
 
@@ -25,6 +27,11 @@ var kmodDefaultImages = cli.StringSlice{
 	"generic/debian10",
 	"generic/centos8",
 	"bento/amazonlinux-2",
+}
+
+func init() {
+	j := &kmodJob{}
+	_ = vmjobs.RegisterJob(j.String(), j)
 }
 
 // Preinitialize map with meaningful values so that we will access it readonly,
@@ -50,26 +57,26 @@ func (j *kmodJob) Desc() string {
 }
 
 func (j *kmodJob) Flags() []cli.Flag {
-	return flagsForBpfKmodTest(&kmodDefaultImages)
+	return bpf.FlagsForBpfKmodTest(&kmodDefaultImages)
 }
 
 func (j *kmodJob) ParseCfg(c *cli.Context) error {
-	btJob, err := newBuildTestJob(c, false, []string{"VM", "GCC", "Linux", "Kmod_built"})
+	btJob, err := bpf.NewBuildTestJob(c, false, []string{"VM", "GCC", "Linux", "Kmod_built"})
 	if err != nil {
 		return err
 	}
-	j.buildTestJob = btJob
+	j.BuildTestJob = btJob
 	j.kmodInfos = initKmodInfoMap(c.StringSlice("image"))
 	return nil
 }
 
 func (j *kmodJob) Cmd() string {
-	return j.cmd
+	return j.Command
 }
 
-func (j *kmodJob) Process(output VMOutput) {
-	outputs := strings.Split(output.Line, ": ")
-	info := j.kmodInfos[output.VM]
+func (j *kmodJob) Process(VM, outputLine string) {
+	outputs := strings.Split(outputLine, ": ")
+	info := j.kmodInfos[VM]
 	switch outputs[0] {
 	case "GCC_VERSION":
 		info.gcc = outputs[1]
@@ -82,8 +89,8 @@ func (j *kmodJob) Process(output VMOutput) {
 
 func (j *kmodJob) Done() {
 	for vm, info := range j.kmodInfos {
-		j.table.Append([]string{vm, info.gcc, info.linux,
+		j.Table.Append([]string{vm, info.gcc, info.linux,
 			strconv.FormatBool(info.kmodBuilt)})
 	}
-	j.table.Render()
+	j.Table.Render()
 }

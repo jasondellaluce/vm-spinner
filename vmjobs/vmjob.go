@@ -1,58 +1,80 @@
 package vmjobs
 
 import (
+	"errors"
 	"fmt"
 	"github.com/urfave/cli"
+	"os"
+	"plugin"
 )
 
-type VMJobType int64
-
-const (
-	VMJobBpf VMJobType = iota
-	VMJobCmd
-	VMJobStdin
-	VMJobScript
-	VMJobKmod
-
-	VMJobMax
-)
-
-type VMOutput struct {
-	VM   string
-	Line string
-}
-
-var imageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
+var ImageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
 
 type VMJob interface {
-	fmt.Stringer // name for the job
+	// Stringer -> name for the job
+	fmt.Stringer
 
-	// Desc returns a job description that will be used as cmd line sub cmd description
+	// Desc -> job description used as cmd line sub cmd description
 	Desc() string
-	// Flags returns list of cli.Flag supported specifically by the job
+	// Flags -> list of cli.Flag supported specifically by the job
 	Flags() []cli.Flag
-	// ParseCfg is called when program starts on a job, to parse job specific config
+	// ParseCfg -> called when program starts on a job, to parse job specific config
 	ParseCfg(c *cli.Context) error
-	// Cmd returns cmd to be used
+	// Cmd -> returns command to be used
 	Cmd() string
-	// Process processes each output line
-	Process(VMOutput)
-	// Done is called at the end of program, to let job flush its data if needed
+	// Process -> processes each output line
+	Process(VM, outputLine string)
+	// Done -> called at the end of program, to let job flush its data if needed
 	Done()
 }
 
-func NewVMJob(jobType VMJobType) (VMJob, error) {
-	switch jobType {
-	case VMJobBpf:
-		return &bpfJob{}, nil
-	case VMJobCmd:
-		return &cmdLineJob{}, nil
-	case VMJobStdin:
-		return &stdinJob{}, nil
-	case VMJobScript:
-		return &scriptJob{}, nil
-	case VMJobKmod:
-		return &kmodJob{}, nil
+var (
+	jobs               = make(map[string]VMJob)
+	alreadyExistentErr = errors.New("job already registered")
+	symbolNotFoundErr  = errors.New("failed to find a PluginJob exported symbol that implements VMJob interface")
+	notVMJobErr        = errors.New("symbol does not implement VMJob interface")
+)
+
+func RegisterJob(name string, job VMJob) error {
+	if _, ok := jobs[name]; !ok {
+		jobs[name] = job
+		return nil
 	}
-	return nil, fmt.Errorf("job %v not supported", jobType)
+	return alreadyExistentErr
+}
+
+func ListJobs() []VMJob {
+	jSlice := make([]VMJob, 0, len(jobs))
+	for _, j := range jobs {
+		jSlice = append(jSlice, j)
+	}
+	return jSlice
+}
+
+func LoadPlugins(folder string) error {
+	files, err := os.ReadDir(folder)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		handle, err := plugin.Open(folder + "/" + f.Name())
+		if err != nil {
+			// Skip all non .so files
+			continue
+		}
+		sym, err := handle.Lookup("PluginJob")
+		if err != nil {
+			return symbolNotFoundErr
+		}
+		pl, ok := sym.(VMJob)
+		if !ok {
+			return notVMJobErr
+		}
+		err = RegisterJob(pl.String(), pl)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

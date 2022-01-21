@@ -1,13 +1,20 @@
-package vmjobs
+package stdin
 
 import (
 	"bufio"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
 	"github.com/urfave/cli"
 	"os"
 )
 
 type stdinJob struct {
 	cmd string
+}
+
+func init() {
+	j := &stdinJob{}
+	_ = vmjobs.RegisterJob(j.String(), j)
 }
 
 func (j *stdinJob) String() string {
@@ -19,13 +26,7 @@ func (j *stdinJob) Desc() string {
 }
 
 func (j *stdinJob) Flags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringSliceFlag{
-			Name:     "image,i",
-			Usage:    imageParamDesc,
-			Required: true,
-		},
-	}
+	return nil
 }
 
 func (j *stdinJob) ParseCfg(_ *cli.Context) error {
@@ -34,7 +35,7 @@ func (j *stdinJob) ParseCfg(_ *cli.Context) error {
 		j.cmd += scanner.Text() + "\n"
 	}
 	if len(j.cmd) == 0 {
-		return emptyCmdErr
+		return cmd.EmptyCmdErr
 	}
 	return nil
 }
@@ -43,7 +44,7 @@ func (j *stdinJob) Cmd() string {
 	return j.cmd
 }
 
-func (j *stdinJob) Process(VMOutput) {
+func (j *stdinJob) Process(_, _ string) {
 
 }
 

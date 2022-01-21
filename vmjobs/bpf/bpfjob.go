@@ -1,9 +1,10 @@
-package vmjobs
+package bpf
 
 import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli"
 	"os"
@@ -19,13 +20,13 @@ type bpfInfo struct {
 	res        string
 }
 
-type buildTestJob struct {
-	table *tablewriter.Table
-	cmd   string
+type BuildTestJob struct {
+	Table   *tablewriter.Table
+	Command string
 }
 
 type bpfJob struct {
-	buildTestJob
+	BuildTestJob
 	bpfInfos map[string]*bpfInfo
 }
 
@@ -42,6 +43,11 @@ var bpfDefaultImages = cli.StringSlice{
 //go:embed scripts/bpf_kmod_job.sh
 var bpfKmodCmdFmt string
 
+func init() {
+	j := &bpfJob{}
+	_ = vmjobs.RegisterJob(j.String(), j)
+}
+
 func (j *bpfJob) String() string {
 	return "bpf"
 }
@@ -51,26 +57,26 @@ func (j *bpfJob) Desc() string {
 }
 
 func (j *bpfJob) Flags() []cli.Flag {
-	return flagsForBpfKmodTest(&bpfDefaultImages)
+	return FlagsForBpfKmodTest(&bpfDefaultImages)
 }
 
 func (j *bpfJob) ParseCfg(c *cli.Context) error {
-	btJob, err := newBuildTestJob(c, true, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"})
+	btJob, err := NewBuildTestJob(c, true, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"})
 	if err != nil {
 		return err
 	}
-	j.buildTestJob = btJob
+	j.BuildTestJob = btJob
 	j.bpfInfos = initBpfInfoMap(c.StringSlice("image"))
 	return nil
 }
 
 func (j *bpfJob) Cmd() string {
-	return j.cmd
+	return j.Command
 }
 
-func (j *bpfJob) Process(output VMOutput) {
-	outputs := strings.Split(output.Line, ": ")
-	info := j.bpfInfos[output.VM]
+func (j *bpfJob) Process(VM, outputLine string) {
+	outputs := strings.Split(outputLine, ": ")
+	info := j.bpfInfos[VM]
 	switch outputs[0] {
 	case "CLANG_VERSION":
 		info.clang = outputs[1]
@@ -87,23 +93,23 @@ func (j *bpfJob) Process(output VMOutput) {
 
 func (j *bpfJob) Done() {
 	for vm, info := range j.bpfInfos {
-		j.table.Append([]string{vm, info.clang, info.linux,
+		j.Table.Append([]string{vm, info.clang, info.linux,
 			strconv.FormatBool(info.scapBuilt),
 			strconv.FormatBool(info.probeBuilt),
 			info.res})
 	}
-	j.table.Render()
+	j.Table.Render()
 }
 
-func newBuildTestJob(c *cli.Context, isBpf bool, headers []string) (buildTestJob, error) {
+func NewBuildTestJob(c *cli.Context, isBpf bool, headers []string) (BuildTestJob, error) {
 	commitHash := c.String("commithash")
 	forkName := c.String("forkname")
 
 	if len(commitHash) == 0 {
-		return buildTestJob{}, errors.New("empty 'commithash' value")
+		return BuildTestJob{}, errors.New("empty 'commithash' value")
 	}
 	if len(forkName) == 0 {
-		return buildTestJob{}, errors.New("empty 'forkname' value")
+		return BuildTestJob{}, errors.New("empty 'forkname' value")
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
@@ -111,9 +117,9 @@ func newBuildTestJob(c *cli.Context, isBpf bool, headers []string) (buildTestJob
 	// Markdown tables!
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
-	return buildTestJob{
-		table: table,
-		cmd:   fmt.Sprintf(bpfKmodCmdFmt, forkName, commitHash, isBpf),
+	return BuildTestJob{
+		Table:   table,
+		Command: fmt.Sprintf(bpfKmodCmdFmt, forkName, commitHash, isBpf),
 	}, nil
 }
 
@@ -133,11 +139,11 @@ func initBpfInfoMap(images []string) map[string]*bpfInfo {
 	return bpfInfos
 }
 
-func flagsForBpfKmodTest(defImages *cli.StringSlice) []cli.Flag {
+func FlagsForBpfKmodTest(defImages *cli.StringSlice) []cli.Flag {
 	return []cli.Flag{
 		cli.StringSliceFlag{
 			Name:  "image,i",
-			Usage: imageParamDesc,
+			Usage: vmjobs.ImageParamDesc,
 			Value: defImages,
 		},
 		cli.StringFlag{

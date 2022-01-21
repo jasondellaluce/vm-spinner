@@ -13,7 +13,19 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/semaphore"
+
+	// Trigger init() on default (internal) job plugins
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/kmod"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/script"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/stdin"
 )
+
+type vmOutput struct {
+	VM   string
+	Line string
+}
 
 func defaultMemory() int {
 	return 1024
@@ -31,15 +43,37 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
-	for i := vmjobs.VMJobBpf; i < vmjobs.VMJobMax; i++ {
-		job, err := vmjobs.NewVMJob(i)
-		if err != nil {
-			log.Fatal(err)
+	
+	err := vmjobs.LoadPlugins("/home/federico/plugins/")
+	if err != nil {
+		log.Warn(err)
+	}
+
+	for _, j := range vmjobs.ListJobs() {
+		job := j
+		// Check if flags contain "image,i", otherwise force a default
+		flags := job.Flags()
+		containsImage := false
+		for _, f := range flags {
+			if f.GetName() == "image,i" {
+				containsImage = true
+				break
+			}
 		}
+		if !containsImage {
+			flags = []cli.Flag{
+				cli.StringSliceFlag{
+					Name:     "image,i",
+					Usage:    vmjobs.ImageParamDesc,
+					Required: true,
+				},
+			}
+		}
+
 		app.Commands = append(app.Commands, cli.Command{
 			Name:        job.String(),
 			Description: job.Desc(),
-			Flags:       job.Flags(),
+			Flags:       flags,
 			Action: func(c *cli.Context) error {
 				return runApp(c, job)
 			},
@@ -82,7 +116,7 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -153,11 +187,11 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 
 	// Goroutine to handle result in job plugin
 	var resWg sync.WaitGroup
-	resCh := make(chan vmjobs.VMOutput)
+	resCh := make(chan vmOutput)
 	resWg.Add(1)
 	go func() {
 		for res := range resCh {
-			job.Process(res)
+			job.Process(res.VM, res.Line)
 		}
 		resWg.Done()
 	}()
@@ -208,14 +242,14 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 			// select the VM outputs
 			channels := RunVirtualMachine(ctx, conf)
 			for {
-				logger := log.WithFields(log.Fields{"vm": conf.BoxName})
+				logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
 				select {
 				case <-channels.Done:
-					logger.Info("Job '%v' finished.", job)
+					logger.Infof("Job '%v' finished.", job)
 					return
 				case l := <-channels.CmdOutput:
 					logger.Info(l)
-					resCh <- vmjobs.VMOutput{VM: conf.BoxName, Line: l}
+					resCh <- vmOutput{VM: conf.BoxName, Line: l}
 				case l := <-channels.Debug:
 					logger.Trace(l)
 				case l := <-channels.Info:
