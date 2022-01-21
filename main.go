@@ -33,7 +33,9 @@ func main() {
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
 	// Each sub-command has its own "image" parameter, because some command
 	// has a default value, therefore not needing a required flag,
-	// while others have no default values
+	// while others have no default values.
+	// Moreover, command may be run in parallel, therefore it is desired
+	// to be able to specify different images for each job.
 	app.Commands = []cli.Command{
 		{
 			Name:   vmjobs.VMJobBpf,

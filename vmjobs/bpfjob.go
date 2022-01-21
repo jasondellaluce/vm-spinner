@@ -20,9 +20,8 @@ type bpfInfo struct {
 }
 
 type buildTestJob struct {
-	table      *tablewriter.Table
-	commitHash string
-	forkName   string
+	table *tablewriter.Table
+	cmd   string
 }
 
 type bpfJob struct {
@@ -40,10 +39,10 @@ var BpfDefaultImages = cli.StringSlice{
 	"bento/amazonlinux-2",
 }
 
-//go:embed scripts/bpf_job.sh
-var bpfCmdFmt string
+//go:embed scripts/bpf_kmod_job.sh
+var bpfKmodCmdFmt string
 
-func newBuildTestJob(c *cli.Context, headers []string) buildTestJob {
+func newBuildTestJob(c *cli.Context, isBpf bool, headers []string) buildTestJob {
 	commitHash := c.String("commithash")
 	forkName := c.String("forkname")
 
@@ -60,15 +59,14 @@ func newBuildTestJob(c *cli.Context, headers []string) buildTestJob {
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
 	return buildTestJob{
-		table:      table,
-		commitHash: commitHash,
-		forkName:   forkName,
+		table: table,
+		cmd:   fmt.Sprintf(bpfKmodCmdFmt, forkName, commitHash, isBpf),
 	}
 }
 
 func newBpfJob(c *cli.Context) (*bpfJob, error) {
 	return &bpfJob{
-		buildTestJob: newBuildTestJob(c, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"}),
+		buildTestJob: newBuildTestJob(c, true, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"}),
 		bpfInfos:     initBpfInfoMap(c.StringSlice("image")),
 	}, nil
 }
@@ -90,22 +88,22 @@ func initBpfInfoMap(images []string) map[string]*bpfInfo {
 }
 
 func (j *bpfJob) Cmd() string {
-	return fmt.Sprintf(bpfCmdFmt, j.forkName, j.commitHash)
+	return j.cmd
 }
 
 func (j *bpfJob) Process(output VMOutput) {
 	outputs := strings.Split(output.Line, ": ")
 	info := j.bpfInfos[output.VM]
 	switch outputs[0] {
-	case "BPF_VERIFIER_CLANG":
+	case "CLANG_VERSION":
 		info.clang = outputs[1]
-	case "BPF_VERIFIER_LINUX":
+	case "LINUX_VERSION":
 		info.linux = outputs[1]
-	case "BPF_VERIFIER_SCAP":
+	case "SCAP_BUILT":
 		info.scapBuilt, _ = strconv.ParseBool(outputs[1])
-	case "BPF_VERIFIER_PROBE":
+	case "PROBE_BUILT":
 		info.probeBuilt, _ = strconv.ParseBool(outputs[1])
-	case "BPF_VERIFIER_TEST", "ERROR":
+	case "VERIFIER_TEST", "ERROR":
 		info.res = outputs[1]
 	}
 }

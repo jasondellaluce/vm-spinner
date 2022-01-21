@@ -2,7 +2,6 @@ package vmjobs
 
 import (
 	_ "embed"
-	"fmt"
 	"github.com/urfave/cli"
 	"strconv"
 	"strings"
@@ -29,12 +28,9 @@ var KmodDefaultImages = cli.StringSlice{
 	"bento/amazonlinux-2",
 }
 
-//go:embed scripts/kmod_job.sh
-var kmodCmdFmt string
-
 func newKmodJob(c *cli.Context) (*kmodJob, error) {
 	return &kmodJob{
-		buildTestJob: newBuildTestJob(c, []string{"VM", "GCC", "Linux", "Kmod_built"}),
+		buildTestJob: newBuildTestJob(c, false, []string{"VM", "GCC", "Linux", "Kmod_built"}),
 		kmodInfos:    initKmodInfoMap(c.StringSlice("image")),
 	}, nil
 }
@@ -54,18 +50,18 @@ func initKmodInfoMap(images []string) map[string]*kmodInfo {
 }
 
 func (j *kmodJob) Cmd() string {
-	return fmt.Sprintf(kmodCmdFmt, j.forkName, j.commitHash)
+	return j.cmd
 }
 
 func (j *kmodJob) Process(output VMOutput) {
 	outputs := strings.Split(output.Line, ": ")
 	info := j.kmodInfos[output.VM]
 	switch outputs[0] {
-	case "KMOD_DRIVER_GCC":
+	case "GCC_VERSION":
 		info.gcc = outputs[1]
-	case "KMOD_DRIVER_LINUX":
+	case "LINUX_VERSION":
 		info.linux = outputs[1]
-	case "KMOD_DRIVER_BUILT":
+	case "DRIVER_BUILT", "ERROR":
 		info.kmodBuilt, _ = strconv.ParseBool(outputs[1])
 	}
 }
