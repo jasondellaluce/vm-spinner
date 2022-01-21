@@ -1,7 +1,6 @@
 package vmjobs
 
 import (
-	_ "embed"
 	"github.com/urfave/cli"
 	"strconv"
 	"strings"
