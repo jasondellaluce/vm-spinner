@@ -18,8 +18,6 @@ import (
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/kmod"
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/script"
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/stdin"
 )
 
 type vmOutput struct {
@@ -66,13 +64,11 @@ func main() {
 			}
 		}
 		if !containsImage {
-			flags = []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    vmjobs.ImageParamDesc,
-					Required: true,
-				},
-			}
+			flags = append(flags, cli.StringSliceFlag{
+				Name:     "image,i",
+				Usage:    vmjobs.ImageParamDesc,
+				Required: true,
+			})
 		}
 
 		app.Commands = append(app.Commands, cli.Command{
