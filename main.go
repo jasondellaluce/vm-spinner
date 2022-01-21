@@ -43,10 +43,15 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
-	
-	err := vmjobs.LoadPlugins("/home/federico/plugins/")
-	if err != nil {
-		log.Warn(err)
+
+	for i, arg := range os.Args {
+		if arg == "--plugin-dir" && len(os.Args) > i+1 {
+			err := vmjobs.LoadPlugins(os.Args[i+1])
+			if err != nil {
+				log.Error(err)
+			}
+			break
+		}
 	}
 
 	for _, j := range vmjobs.ListJobs() {
@@ -86,6 +91,12 @@ func main() {
 			Usage: "Vagrant provider name.",
 			Value: "virtualbox",
 		},
+		// This is fake, ie: we will parse it instead of let it be parsed by the library,
+		// as we need to eventually load plugins before running the app through cli library.
+		cli.StringFlag{
+			Name:  "plugin-dir",
+			Usage: "Specify a folder to load plugins from.",
+		},
 		cli.IntFlag{
 			Name:  "memory",
 			Usage: "The amount of memory (in bytes) allocated for each VM.",
@@ -116,7 +127,7 @@ func main() {
 		},
 	}
 
-	err = app.Run(os.Args)
+	err := app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}
