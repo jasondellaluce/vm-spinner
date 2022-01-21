@@ -18,7 +18,7 @@ type kmodJob struct {
 	kmodInfos map[string]*kmodInfo
 }
 
-var KmodDefaultImages = cli.StringSlice{
+var kmodDefaultImages = cli.StringSlice{
 	"generic/fedora33",
 	"generic/fedora35",
 	"ubuntu/focal64",
@@ -26,13 +26,6 @@ var KmodDefaultImages = cli.StringSlice{
 	"generic/debian10",
 	"generic/centos8",
 	"bento/amazonlinux-2",
-}
-
-func newKmodJob(c *cli.Context) (*kmodJob, error) {
-	return &kmodJob{
-		buildTestJob: newBuildTestJob(c, false, []string{"VM", "GCC", "Linux", "Kmod_built"}),
-		kmodInfos:    initKmodInfoMap(c.StringSlice("image")),
-	}, nil
 }
 
 // Preinitialize map with meaningful values so that we will access it readonly,
@@ -47,6 +40,28 @@ func initKmodInfoMap(images []string) map[string]*kmodInfo {
 		}
 	}
 	return kmodInfos
+}
+
+func (j *kmodJob) String() string {
+	return "kmod"
+}
+
+func (j *kmodJob) Desc() string {
+	return "Run kmod build job."
+}
+
+func (j *kmodJob) Flags() []cli.Flag {
+	return flagsForBpfKmodTest(&kmodDefaultImages)
+}
+
+func (j *kmodJob) ParseCfg(c *cli.Context) error {
+	btJob, err := newBuildTestJob(c, false, []string{"VM", "GCC", "Linux", "Kmod_built"})
+	if err != nil {
+		return err
+	}
+	j.buildTestJob = btJob
+	j.kmodInfos = initKmodInfoMap(c.StringSlice("image"))
+	return nil
 }
 
 func (j *kmodJob) Cmd() string {

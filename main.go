@@ -31,103 +31,21 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
-	// Each sub-command has its own "image" parameter, because some command
-	// has a default value, therefore not needing a required flag,
-	// while others have no default values.
-	// Moreover, command may be run in parallel, therefore it is desired
-	// to be able to specify different images for each job.
-	app.Commands = []cli.Command{
-		{
-			Name:   vmjobs.VMJobBpf,
-			Usage:  "Run bpf build + verifier job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:  "image,i",
-					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Value: &vmjobs.BpfDefaultImages,
-				},
-				cli.StringFlag{
-					Name:  "forkname",
-					Usage: "libs fork to clone from.",
-					Value: "falcosecurity",
-				},
-				cli.StringFlag{
-					Name:  "commithash",
-					Usage: "libs commit hash to run the test against.",
-					Value: "master",
-				},
+	for i := vmjobs.VMJobBpf; i < vmjobs.VMJobMax; i++ {
+		job, err := vmjobs.NewVMJob(i)
+		if err != nil {
+			log.Fatal(err)
+		}
+		app.Commands = append(app.Commands, cli.Command{
+			Name:        job.String(),
+			Description: job.Desc(),
+			Flags:       job.Flags(),
+			Action: func(c *cli.Context) error {
+				return runApp(c, job)
 			},
-		},
-		{
-			Name:   vmjobs.VMJobKmod,
-			Usage:  "Run kmod build job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:  "image,i",
-					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Value: &vmjobs.KmodDefaultImages,
-				},
-				cli.StringFlag{
-					Name:  "forkname",
-					Usage: "libs fork to clone from.",
-					Value: "falcosecurity",
-				},
-				cli.StringFlag{
-					Name:  "commithash",
-					Usage: "libs commit hash to run the test against.",
-					Value: "master",
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobCmd,
-			Usage:  "Run a simple cmd line job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-				cli.StringFlag{
-					Name:     "line",
-					Usage:    "command that runs in each VM, as a command line parameter.",
-					Required: true,
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobStdin,
-			Usage:  "Run a simple cmd line job read from stdin.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobScript,
-			Usage:  "Run a simple script job read from file.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-				cli.StringFlag{
-					Name:     "file",
-					Usage:    "script that runs in each VM, as a filepath.",
-					Required: true,
-				},
-			},
-		},
+		})
 	}
+	// Global flags
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "provider,p",
@@ -217,7 +135,7 @@ func initLog(c *cli.Context) error {
 	return nil
 }
 
-func runApp(c *cli.Context) error {
+func runApp(c *cli.Context, job vmjobs.VMJob) error {
 	err := validateParameters(c)
 	if err != nil {
 		return err
@@ -228,7 +146,7 @@ func runApp(c *cli.Context) error {
 		return err
 	}
 
-	job, err := vmjobs.NewVMJob(c)
+	err = job.ParseCfg(c)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -259,7 +177,7 @@ func runApp(c *cli.Context) error {
 	sm := semaphore.NewWeighted(int64(c.GlobalInt("parallelism")))
 
 	images := c.StringSlice("image")
-	log.Infof("Running on %v images", images)
+	log.Infof("Running '%v' job on %v images", job, images)
 	for i, image := range images {
 		smErr := sm.Acquire(ctx, 1)
 		// Acquire may return non-nil err even if ctx.Done() is triggered
@@ -293,7 +211,7 @@ func runApp(c *cli.Context) error {
 				logger := log.WithFields(log.Fields{"vm": conf.BoxName})
 				select {
 				case <-channels.Done:
-					logger.Info("Job Finished.")
+					logger.Info("Job '%v' finished.", job)
 					return
 				case l := <-channels.CmdOutput:
 					logger.Info(l)

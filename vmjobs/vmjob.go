@@ -5,12 +5,16 @@ import (
 	"github.com/urfave/cli"
 )
 
+type VMJobType int64
+
 const (
-	VMJobBpf    = "bpf"
-	VMJobCmd    = "cmd"
-	VMJobStdin  = "stdin"
-	VMJobScript = "script"
-	VMJobKmod   = "kmod"
+	VMJobBpf VMJobType = iota
+	VMJobCmd
+	VMJobStdin
+	VMJobScript
+	VMJobKmod
+
+	VMJobMax
 )
 
 type VMOutput struct {
@@ -18,7 +22,17 @@ type VMOutput struct {
 	Line string
 }
 
+var imageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
+
 type VMJob interface {
+	fmt.Stringer // name for the job
+
+	// Desc returns a job description that will be used as cmd line sub cmd description
+	Desc() string
+	// Flags returns list of cli.Flag supported specifically by the job
+	Flags() []cli.Flag
+	// ParseCfg is called when program starts on a job, to parse job specific config
+	ParseCfg(c *cli.Context) error
 	// Cmd returns cmd to be used
 	Cmd() string
 	// Process processes each output line
@@ -27,19 +41,18 @@ type VMJob interface {
 	Done()
 }
 
-func NewVMJob(c *cli.Context) (VMJob, error) {
-	jobType := c.Command.Name
+func NewVMJob(jobType VMJobType) (VMJob, error) {
 	switch jobType {
 	case VMJobBpf:
-		return newBpfJob(c)
+		return &bpfJob{}, nil
 	case VMJobCmd:
-		return newCmdLineJob(c)
+		return &cmdLineJob{}, nil
 	case VMJobStdin:
-		return newStdinJob()
+		return &stdinJob{}, nil
 	case VMJobScript:
-		return newScriptJob(c)
+		return &scriptJob{}, nil
 	case VMJobKmod:
-		return newKmodJob(c)
+		return &kmodJob{}, nil
 	}
-	return nil, fmt.Errorf("job '%s' not supported", jobType)
+	return nil, fmt.Errorf("job %v not supported", jobType)
 }

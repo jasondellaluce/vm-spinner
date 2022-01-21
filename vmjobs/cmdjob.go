@@ -1,7 +1,7 @@
 package vmjobs
 
 import (
-	log "github.com/sirupsen/logrus"
+	"fmt"
 	"github.com/urfave/cli"
 )
 
@@ -9,15 +9,37 @@ type cmdLineJob struct {
 	cmd string
 }
 
-func newCmdLineJob(c *cli.Context) (VMJob, error) {
-	return cmdLineJobFromCmd(c.String("line"))
+var emptyCmdErr = fmt.Errorf("provided command is empty")
+
+func (j *cmdLineJob) String() string {
+	return "cmd"
 }
 
-func cmdLineJobFromCmd(cmd string) (VMJob, error) {
-	if len(cmd) == 0 {
-		log.Fatalf("provided command is empty.")
+func (j *cmdLineJob) Desc() string {
+	return "Run a simple cmd line job."
+}
+
+func (j *cmdLineJob) Flags() []cli.Flag {
+	return []cli.Flag{
+		cli.StringSliceFlag{
+			Name:     "image,i",
+			Usage:    imageParamDesc,
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     "line",
+			Usage:    "command that runs in each VM, as a command line parameter.",
+			Required: true,
+		},
 	}
-	return &cmdLineJob{cmd: cmd}, nil
+}
+
+func (j *cmdLineJob) ParseCfg(c *cli.Context) error {
+	j.cmd = c.String("line")
+	if len(j.cmd) == 0 {
+		return emptyCmdErr
+	}
+	return nil
 }
 
 func (j *cmdLineJob) Cmd() string {

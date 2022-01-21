@@ -2,9 +2,9 @@ package vmjobs
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"github.com/olekukonko/tablewriter"
-	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"os"
 	"strconv"
@@ -29,7 +29,7 @@ type bpfJob struct {
 	bpfInfos map[string]*bpfInfo
 }
 
-var BpfDefaultImages = cli.StringSlice{
+var bpfDefaultImages = cli.StringSlice{
 	"generic/fedora33",
 	"generic/fedora35",
 	"ubuntu/focal64",
@@ -42,49 +42,26 @@ var BpfDefaultImages = cli.StringSlice{
 //go:embed scripts/bpf_kmod_job.sh
 var bpfKmodCmdFmt string
 
-func newBuildTestJob(c *cli.Context, isBpf bool, headers []string) buildTestJob {
-	commitHash := c.String("commithash")
-	forkName := c.String("forkname")
-
-	if len(commitHash) == 0 {
-		log.Fatalf("empty 'commithash' value")
-	}
-	if len(forkName) == 0 {
-		log.Fatalf("empty 'forkname' value")
-	}
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader(headers)
-	// Markdown tables!
-	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
-	table.SetCenterSeparator("|")
-	return buildTestJob{
-		table: table,
-		cmd:   fmt.Sprintf(bpfKmodCmdFmt, forkName, commitHash, isBpf),
-	}
+func (j *bpfJob) String() string {
+	return "bpf"
 }
 
-func newBpfJob(c *cli.Context) (*bpfJob, error) {
-	return &bpfJob{
-		buildTestJob: newBuildTestJob(c, true, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"}),
-		bpfInfos:     initBpfInfoMap(c.StringSlice("image")),
-	}, nil
+func (j *bpfJob) Desc() string {
+	return "Run bpf build + verifier job."
 }
 
-// Preinitialize map with meaningful values so that we will access it readonly,
-// and there will be no need for concurrent access strategies
-func initBpfInfoMap(images []string) map[string]*bpfInfo {
-	bpfInfos := make(map[string]*bpfInfo)
-	for _, image := range images {
-		bpfInfos[image] = &bpfInfo{
-			clang:      "N/A",
-			linux:      "N/A",
-			scapBuilt:  false,
-			probeBuilt: false,
-			res:        "N/A",
-		}
+func (j *bpfJob) Flags() []cli.Flag {
+	return flagsForBpfKmodTest(&bpfDefaultImages)
+}
+
+func (j *bpfJob) ParseCfg(c *cli.Context) error {
+	btJob, err := newBuildTestJob(c, true, []string{"VM", "Clang", "Linux", "Scap_built", "Probe_built", "Res"})
+	if err != nil {
+		return err
 	}
-	return bpfInfos
+	j.buildTestJob = btJob
+	j.bpfInfos = initBpfInfoMap(c.StringSlice("image"))
+	return nil
 }
 
 func (j *bpfJob) Cmd() string {
@@ -116,4 +93,62 @@ func (j *bpfJob) Done() {
 			info.res})
 	}
 	j.table.Render()
+}
+
+func newBuildTestJob(c *cli.Context, isBpf bool, headers []string) (buildTestJob, error) {
+	commitHash := c.String("commithash")
+	forkName := c.String("forkname")
+
+	if len(commitHash) == 0 {
+		return buildTestJob{}, errors.New("empty 'commithash' value")
+	}
+	if len(forkName) == 0 {
+		return buildTestJob{}, errors.New("empty 'forkname' value")
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader(headers)
+	// Markdown tables!
+	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+	table.SetCenterSeparator("|")
+	return buildTestJob{
+		table: table,
+		cmd:   fmt.Sprintf(bpfKmodCmdFmt, forkName, commitHash, isBpf),
+	}, nil
+}
+
+// Preinitialize map with meaningful values so that we will access it readonly,
+// and there will be no need for concurrent access strategies
+func initBpfInfoMap(images []string) map[string]*bpfInfo {
+	bpfInfos := make(map[string]*bpfInfo)
+	for _, image := range images {
+		bpfInfos[image] = &bpfInfo{
+			clang:      "N/A",
+			linux:      "N/A",
+			scapBuilt:  false,
+			probeBuilt: false,
+			res:        "N/A",
+		}
+	}
+	return bpfInfos
+}
+
+func flagsForBpfKmodTest(defImages *cli.StringSlice) []cli.Flag {
+	return []cli.Flag{
+		cli.StringSliceFlag{
+			Name:  "image,i",
+			Usage: imageParamDesc,
+			Value: defImages,
+		},
+		cli.StringFlag{
+			Name:  "forkname",
+			Usage: "libs fork to clone from.",
+			Value: "falcosecurity",
+		},
+		cli.StringFlag{
+			Name:  "commithash",
+			Usage: "libs commit hash to run the test against.",
+			Value: "master",
+		},
+	}
 }
