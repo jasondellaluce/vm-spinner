@@ -16,7 +16,8 @@ type VMJob interface {
 
 	// Desc -> job description used as cmd line sub cmd description
 	Desc() string
-	// Flags -> list of cli.Flag supported specifically by the job
+	// Flags -> list of cli.Flag supported specifically by the job.
+	// if missing, an "image/i" required flag is automatically enforced
 	Flags() []cli.Flag
 	// ParseCfg -> called when program starts on a job, to parse job specific config
 	ParseCfg(c *cli.Context) error
