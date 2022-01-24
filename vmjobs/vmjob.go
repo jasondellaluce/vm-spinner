@@ -29,13 +29,21 @@ type VMJob interface {
 	Done()
 }
 
+// pluginJob type is used to wrap the VMJob provided
+// by plugins. Right now it is only used in main to
+// distinguish between plugins and internal jobs
+type pluginJob struct {
+	VMJob
+}
+
 var (
 	jobs               = make(map[string]VMJob)
 	alreadyExistentErr = errors.New("job already registered")
-	symbolNotFoundErr  = errors.New("failed to find a PluginJob exported symbol that implements VMJob interface")
+	symbolNotFoundErr  = errors.New("failed to find a pluginJob exported symbol that implements VMJob interface")
 	notVMJobErr        = errors.New("symbol does not implement VMJob interface")
 )
 
+// RegisterJob is used by internal plugins to register themselves in their init()
 func RegisterJob(name string, job VMJob) error {
 	if _, ok := jobs[name]; !ok {
 		jobs[name] = job
@@ -72,10 +80,15 @@ func LoadPlugins(folder string) error {
 		if !ok {
 			return notVMJobErr
 		}
-		err = RegisterJob(pl.String(), pl)
+		err = RegisterJob(pl.String(), pluginJob{pl})
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func IsPluginJob(job VMJob) bool {
+	_, isPlugin := job.(pluginJob)
+	return isPlugin
 }

@@ -54,6 +54,7 @@ func main() {
 
 	for _, j := range vmjobs.ListJobs() {
 		job := j
+
 		// Check if flags contain "image,i", otherwise force a default
 		flags := job.Flags()
 		containsImage := false
@@ -71,15 +72,22 @@ func main() {
 			})
 		}
 
-		app.Commands = append(app.Commands, cli.Command{
+		cmd := cli.Command{
 			Name:        job.String(),
 			Description: job.Desc(),
 			Flags:       flags,
 			Action: func(c *cli.Context) error {
 				return runApp(c, job)
 			},
-		})
+		}
+		if vmjobs.IsPluginJob(job) {
+			cmd.Category = "Plugin"
+		} else {
+			cmd.Category = "Internal"
+		}
+		app.Commands = append(app.Commands, cmd)
 	}
+
 	// Global flags
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
