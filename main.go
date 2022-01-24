@@ -7,13 +7,24 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/semaphore"
+
+	// Trigger init() on default (internal) job plugins
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/kmod"
 )
+
+type vmOutput struct {
+	VM   string
+	Line string
+}
 
 func defaultMemory() int {
 	return 1024
@@ -31,106 +42,65 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "vm-spinner"
 	app.Usage = "Run your workloads on ephemeral Virtual Machines"
-	// Each sub-command has its own "image" parameter, because some command
-	// has a default value, therefore not needing a required flag,
-	// while others have no default values
-	app.Commands = []cli.Command{
-		{
-			Name:   vmjobs.VMJobBpf,
-			Usage:  "Run bpf build + verifier job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:  "image,i",
-					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Value: &vmjobs.BpfDefaultImages,
-				},
-				cli.StringFlag{
-					Name:  "forkname",
-					Usage: "libs fork to clone from.",
-					Value: "falcosecurity",
-				},
-				cli.StringFlag{
-					Name:  "commithash",
-					Usage: "libs commit hash to run the test against.",
-					Value: "master",
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobKmod,
-			Usage:  "Run kmod build job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:  "image,i",
-					Usage: "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Value: &vmjobs.KmodDefaultImages,
-				},
-				cli.StringFlag{
-					Name:  "forkname",
-					Usage: "libs fork to clone from.",
-					Value: "falcosecurity",
-				},
-				cli.StringFlag{
-					Name:  "commithash",
-					Usage: "libs commit hash to run the test against.",
-					Value: "master",
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobCmd,
-			Usage:  "Run a simple cmd line job.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-				cli.StringFlag{
-					Name:     "line",
-					Usage:    "command that runs in each VM, as a command line parameter.",
-					Required: true,
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobStdin,
-			Usage:  "Run a simple cmd line job read from stdin.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-			},
-		},
-		{
-			Name:   vmjobs.VMJobScript,
-			Usage:  "Run a simple script job read from file.",
-			Action: runApp,
-			Flags: []cli.Flag{
-				cli.StringSliceFlag{
-					Name:     "image,i",
-					Usage:    "VM image to run the command on. Specify it multiple times for multiple vms.",
-					Required: true,
-				},
-				cli.StringFlag{
-					Name:     "file",
-					Usage:    "script that runs in each VM, as a filepath.",
-					Required: true,
-				},
-			},
-		},
+
+	for i, arg := range os.Args {
+		if arg == "--plugin-dir" && len(os.Args) > i+1 {
+			err := vmjobs.LoadPlugins(os.Args[i+1])
+			if err != nil {
+				log.Error(err)
+			}
+			break
+		}
 	}
+
+	for _, j := range vmjobs.ListJobs() {
+		job := j
+
+		// Check if flags contain "image,i", otherwise force a default
+		flags := job.Flags()
+		containsImage := false
+		for _, f := range flags {
+			if f.GetName() == "image,i" {
+				containsImage = true
+				break
+			}
+		}
+		if !containsImage {
+			flags = append(flags, cli.StringSliceFlag{
+				Name:     "image,i",
+				Usage:    vmjobs.ImageParamDesc,
+				Required: true,
+			})
+		}
+
+		cmd := cli.Command{
+			Name:        job.String(),
+			Description: job.Desc(),
+			Flags:       flags,
+			Action: func(c *cli.Context) error {
+				return runApp(c, job)
+			},
+		}
+		if vmjobs.IsPluginJob(job) {
+			cmd.Category = "Plugin"
+		} else {
+			cmd.Category = "Internal"
+		}
+		app.Commands = append(app.Commands, cmd)
+	}
+
+	// Global flags
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "provider,p",
 			Usage: "Vagrant provider name.",
 			Value: "virtualbox",
+		},
+		// This is fake, ie: we will parse it instead of let it be parsed by the library,
+		// as we need to eventually load plugins before running the app through cli library.
+		cli.StringFlag{
+			Name:  "plugin-dir",
+			Usage: "Specify a folder to load plugins from.",
 		},
 		cli.IntFlag{
 			Name:  "memory",
@@ -215,7 +185,7 @@ func initLog(c *cli.Context) error {
 	return nil
 }
 
-func runApp(c *cli.Context) error {
+func runApp(c *cli.Context, job vmjobs.VMJob) error {
 	err := validateParameters(c)
 	if err != nil {
 		return err
@@ -226,18 +196,24 @@ func runApp(c *cli.Context) error {
 		return err
 	}
 
-	job, err := vmjobs.NewVMJob(c)
+	err = job.ParseCfg(c)
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+
+	// Strip empty lines
+	cmd := strings.Replace(job.Cmd(), "\n", "", -1)
+	if len(cmd) == 0 {
+		return vmjobs.EmptyCmdErr
 	}
 
 	// Goroutine to handle result in job plugin
 	var resWg sync.WaitGroup
-	resCh := make(chan vmjobs.VMOutput)
+	resCh := make(chan vmOutput)
 	resWg.Add(1)
 	go func() {
 		for res := range resCh {
-			job.Process(res)
+			job.Process(res.VM, res.Line)
 		}
 		resWg.Done()
 	}()
@@ -257,7 +233,7 @@ func runApp(c *cli.Context) error {
 	sm := semaphore.NewWeighted(int64(c.GlobalInt("parallelism")))
 
 	images := c.StringSlice("image")
-	log.Infof("Running on %v images", images)
+	log.Infof("Running '%v' job on %v images", job, images)
 	for i, image := range images {
 		smErr := sm.Acquire(ctx, 1)
 		// Acquire may return non-nil err even if ctx.Done() is triggered
@@ -288,14 +264,14 @@ func runApp(c *cli.Context) error {
 			// select the VM outputs
 			channels := RunVirtualMachine(ctx, conf)
 			for {
-				logger := log.WithFields(log.Fields{"vm": conf.BoxName})
+				logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
 				select {
 				case <-channels.Done:
-					logger.Info("Job Finished.")
+					logger.Infof("Job '%v' finished.", job)
 					return
 				case l := <-channels.CmdOutput:
 					logger.Info(l)
-					resCh <- vmjobs.VMOutput{VM: conf.BoxName, Line: l}
+					resCh <- vmOutput{VM: conf.BoxName, Line: l}
 				case l := <-channels.Debug:
 					logger.Trace(l)
 				case l := <-channels.Info:
