@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -197,7 +198,13 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 
 	err = job.ParseCfg(c)
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+
+	// Strip empty lines
+	cmd := strings.Replace(job.Cmd(), "\n", "", -1)
+	if len(cmd) == 0 {
+		return vmjobs.EmptyCmdErr
 	}
 
 	// Goroutine to handle result in job plugin

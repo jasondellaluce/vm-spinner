@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"fmt"
 	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
 	"github.com/urfave/cli"
 	"os"
@@ -11,8 +10,6 @@ import (
 type cmdLineJob struct {
 	cmd string
 }
-
-var EmptyCmdErr = fmt.Errorf("provided command is empty")
 
 func init() {
 	j := &cmdLineJob{}
@@ -60,9 +57,6 @@ func (j *cmdLineJob) ParseCfg(c *cli.Context) error {
 		for scanner.Scan() {
 			j.cmd += scanner.Text() + "\n"
 		}
-	}
-	if len(j.cmd) == 0 {
-		return EmptyCmdErr
 	}
 	return nil
 }

@@ -8,7 +8,10 @@ import (
 	"plugin"
 )
 
-var ImageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
+var (
+	ImageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
+	EmptyCmdErr    = fmt.Errorf("provided command is empty")
+)
 
 type VMJob interface {
 	// Stringer -> name for the job
