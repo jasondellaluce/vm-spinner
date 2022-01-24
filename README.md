@@ -23,7 +23,7 @@ package main
 import (
 	"bufio"
 	"os"
-    "github.com/urfave/cli"
+    	"github.com/urfave/cli"
 )
 
 type myJob struct {
@@ -64,8 +64,8 @@ func (j *myJob) Done() {}
 You can see that the implementation is fairly simple.  
 Just a couple of things to note:
 
-* String() returns plugin name. It +*must** be unique foreach plugin
-* github.com/urfave/cli package is an hard dep
+* String() returns plugin name. It **must** be unique foreach plugin
+* `github.com/urfave/cli` package is an hard dep
 * When `nil` flags are returned, or if the list of flags does not contain an `image,i` flag, a default image flag is forced
 
 ### Examples
