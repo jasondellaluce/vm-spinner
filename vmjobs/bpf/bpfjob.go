@@ -70,8 +70,8 @@ func (j *bpfJob) ParseCfg(c *cli.Context) error {
 	return nil
 }
 
-func (j *bpfJob) Cmd() string {
-	return j.Command
+func (j *bpfJob) Cmd() (string, bool) {
+	return j.Command, false
 }
 
 func (j *bpfJob) Process(VM, outputLine string) {

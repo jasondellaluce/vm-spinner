@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
 	"github.com/koding/vagrantutil"
 	"os"
 )
@@ -19,12 +20,12 @@ end
 `
 
 type VMConfig struct {
-	Name         string
+	Path         string
 	BoxName      string
 	ProviderName string
 	Memory       int
 	CPUs         int
-	Command      string
+	Job          vmjobs.VMJob
 }
 
 type VMChannels struct {
@@ -67,7 +68,7 @@ func RunVirtualMachine(ctx context.Context, conf *VMConfig) *VMChannels {
 		close(debug)
 		close(info)
 		close(err)
-		os.RemoveAll(conf.Name)
+		os.RemoveAll(conf.Path)
 	}()
 
 	return &VMChannels{
@@ -80,7 +81,7 @@ func RunVirtualMachine(ctx context.Context, conf *VMConfig) *VMChannels {
 }
 
 func destroyVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, info chan<- string) error {
-	sendStr(debug, "Destroying Vagrant VM for '"+conf.Name+"'")
+	sendStr(debug, "Destroying Vagrant VM for '"+conf.BoxName+"'")
 	destroy, err := vagrant.Destroy()
 	if err != nil {
 		return err
@@ -95,7 +96,7 @@ func destroyVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, 
 }
 
 func haltVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, info chan<- string) error {
-	sendStr(debug, "Halting Vagrant VM for '"+conf.Name+"'")
+	sendStr(debug, "Halting Vagrant VM for '"+conf.BoxName+"'")
 	halt, err := vagrant.Halt()
 	if err != nil {
 		return err
@@ -110,16 +111,19 @@ func haltVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, inf
 }
 
 func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info chan<- string) (resErr error) {
+	var (
+		vagrant *vagrantutil.Vagrant
+		up      <-chan *vagrantutil.CommandOutput
+	)
 	// Create Vagrant config file
-	sendStr(debug, "Initializing Vagrant configuration for '"+conf.Name+"'")
-	vagrant, err := vagrantutil.NewVagrant(conf.Name)
-	if err != nil {
-		resErr = err
+	sendStr(debug, "Initializing Vagrant configuration for '"+conf.BoxName+"'")
+	vagrant, resErr = vagrantutil.NewVagrant(conf.Path)
+	if resErr != nil {
 		return
 	}
 
 	// Create Vagrant VM
-	sendStr(debug, "Creating Vagrant VM  for '"+conf.Name+"' on '"+conf.ProviderName+"' provider")
+	sendStr(debug, "Creating Vagrant VM  for '"+conf.BoxName+"' on '"+conf.ProviderName+"' provider")
 	vagrantfile := fmt.Sprintf(
 		fmtVagrantfile,
 		conf.BoxName,
@@ -127,9 +131,8 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 		conf.Memory,
 		conf.CPUs,
 	)
-	err = vagrant.Create(vagrantfile)
-	if err != nil {
-		resErr = err
+	resErr = vagrant.Create(vagrantfile)
+	if resErr != nil {
 		return
 	}
 	defer func() {
@@ -137,10 +140,9 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 	}()
 
 	// Start up the VM
-	sendStr(debug, "Starting Vagrant VM for '"+conf.Name+"'")
-	up, err := vagrant.Up()
-	if err != nil {
-		resErr = err
+	sendStr(debug, "Starting Vagrant VM for '"+conf.BoxName+"'")
+	up, resErr = vagrant.Up()
+	if resErr != nil {
 		return
 	}
 	defer func() {
@@ -152,16 +154,25 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 		return
 	}
 
-	// Establish a SSH connection and run command
-	sendStr(debug, "Running command with SSH for '"+conf.Name+"'")
-	ssh, err := vagrant.SSH(conf.Command)
-	if err != nil {
-		resErr = err
-		return
-	}
+	// Establish an SSH connection and run command
+	sendStr(debug, "Running command with SSH for '"+conf.BoxName+"'")
 
-	_ = selectHandleSig(ssh, ctx, output)
+	for {
+		cmd, hasMore := conf.Job.Cmd()
+		killedBySignal, resErr = callSSHCmd(ctx, vagrant, cmd, output)
+		if !hasMore || killedBySignal || resErr != nil {
+			break
+		}
+	}
 	return
+}
+
+func callSSHCmd(ctx context.Context, vagrant *vagrantutil.Vagrant, cmd string, output chan<- string) (bool, error) {
+	ssh, err := vagrant.SSH(cmd)
+	if err != nil {
+		return false, err
+	}
+	return selectHandleSig(ssh, ctx, output), nil
 }
 
 // selectHandleSig returns whether ctx done was received

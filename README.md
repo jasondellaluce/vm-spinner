@@ -52,8 +52,8 @@ func (j *myJob) ParseCfg(_ *cli.Context) error {
 	return nil
 }
 
-func (j *myJob) Cmd() string {
-	return j.cmd
+func (j *myJob) Cmd() (string, bool) {
+	return j.cmd, false
 }
 
 func (j *myJob) Process(_, _ string) {}

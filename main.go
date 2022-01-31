@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -19,6 +18,7 @@ import (
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
 	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/kmod"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/ssh"
 )
 
 type vmOutput struct {
@@ -57,7 +57,10 @@ func main() {
 		job := j
 
 		// Check if flags contain "image,i", otherwise force a default
-		flags := job.Flags()
+		var flags []cli.Flag
+		if configJob, ok := job.(vmjobs.VMJobConfigurator); ok {
+			flags = configJob.Flags()
+		}
 		containsImage := false
 		for _, f := range flags {
 			if f.GetName() == "image,i" {
@@ -81,6 +84,7 @@ func main() {
 				return runApp(c, job)
 			},
 		}
+
 		if vmjobs.IsPluginJob(job) {
 			cmd.Category = "Plugin"
 		} else {
@@ -196,27 +200,28 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 		return err
 	}
 
-	err = job.ParseCfg(c)
-	if err != nil {
-		return err
-	}
-
-	// Strip empty lines
-	cmd := strings.Replace(job.Cmd(), "\n", "", -1)
-	if len(cmd) == 0 {
-		return vmjobs.EmptyCmdErr
+	if j, ok := job.(vmjobs.VMJobConfigurator); ok {
+		err = j.ParseCfg(c)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Goroutine to handle result in job plugin
-	var resWg sync.WaitGroup
-	resCh := make(chan vmOutput)
-	resWg.Add(1)
-	go func() {
-		for res := range resCh {
-			job.Process(res.VM, res.Line)
-		}
-		resWg.Done()
-	}()
+	var (
+		resWg sync.WaitGroup
+		resCh chan vmOutput
+	)
+	if j, ok := job.(vmjobs.VMJobProcessor); ok {
+		resCh = make(chan vmOutput)
+		resWg.Add(1)
+		go func() {
+			for res := range resCh {
+				j.Process(res.VM, res.Line)
+			}
+			resWg.Done()
+		}()
+	}
 
 	// Unlock sm.Acquire() call killing its context on external signals, allowing us
 	// to avoid situations when some images are waiting on sm.Acquire() call,
@@ -246,12 +251,12 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 		// launch the VM for this image
 		name := fmt.Sprintf("/tmp/%s-%d", image, i)
 		conf := &VMConfig{
-			Name:         name,
+			Path:         name,
 			BoxName:      image,
 			ProviderName: c.GlobalString("provider"),
 			CPUs:         c.GlobalInt("cpus"),
 			Memory:       c.GlobalInt("memory"),
-			Command:      job.Cmd(),
+			Job:          job,
 		}
 
 		// worker goroutine
@@ -271,7 +276,9 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 					return
 				case l := <-channels.CmdOutput:
 					logger.Info(l)
-					resCh <- vmOutput{VM: conf.BoxName, Line: l}
+					if resCh != nil {
+						resCh <- vmOutput{VM: conf.BoxName, Line: l}
+					}
 				case l := <-channels.Debug:
 					logger.Trace(l)
 				case l := <-channels.Info:
@@ -286,13 +293,14 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 	// wait for all workers
 	wg.Wait()
 
-	// Close summary matrix channel and wait
-	// for it to eventually print the summary
-	close(resCh)
-	resWg.Wait()
+	if j, ok := job.(vmjobs.VMJobProcessor); ok {
+		// Close summary matrix channel and wait
+		// for it to eventually print the summary
+		close(resCh)
+		resWg.Wait()
 
-	// Notify job that we're done
-	job.Done()
-
+		// Notify job that we're done
+		j.Done()
+	}
 	return nil
 }

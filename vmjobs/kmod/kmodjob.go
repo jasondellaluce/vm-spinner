@@ -70,8 +70,8 @@ func (j *kmodJob) ParseCfg(c *cli.Context) error {
 	return nil
 }
 
-func (j *kmodJob) Cmd() string {
-	return j.Command
+func (j *kmodJob) Cmd() (string, bool) {
+	return j.Command, false
 }
 
 func (j *kmodJob) Process(VM, outputLine string) {

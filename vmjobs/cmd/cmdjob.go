@@ -61,14 +61,6 @@ func (j *cmdLineJob) ParseCfg(c *cli.Context) error {
 	return nil
 }
 
-func (j *cmdLineJob) Cmd() string {
-	return j.cmd
-}
-
-func (j *cmdLineJob) Process(_, _ string) {
-
-}
-
-func (j *cmdLineJob) Done() {
-
+func (j *cmdLineJob) Cmd() (string, bool) {
+	return j.cmd, false
 }
