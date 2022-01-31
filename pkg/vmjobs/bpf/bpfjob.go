@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli"
 	"os"

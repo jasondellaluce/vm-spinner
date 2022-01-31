@@ -1,9 +1,9 @@
-package main
+package vagrant
 
 import (
 	"context"
 	"fmt"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"github.com/koding/vagrantutil"
 	"os"
 )

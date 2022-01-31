@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vagrant"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"os"
 	"os/signal"
 	"runtime"
@@ -15,10 +16,10 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	// Trigger init() on default (internal) job plugins
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/cmd"
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/kmod"
-	_ "github.com/jasondellaluce/experiments/vm-spinner/vmjobs/ssh"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/bpf"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/cmd"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/kmod"
+	_ "github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/ssh"
 )
 
 type vmOutput struct {
@@ -250,7 +251,7 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 
 		// launch the VM for this image
 		name := fmt.Sprintf("/tmp/%s-%d", image, i)
-		conf := &VMConfig{
+		conf := &vagrant.VMConfig{
 			Path:         name,
 			BoxName:      image,
 			ProviderName: c.GlobalString("provider"),
@@ -267,7 +268,7 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 			}()
 
 			// select the VM outputs
-			channels := RunVirtualMachine(ctx, conf)
+			channels := vagrant.RunVirtualMachine(ctx, conf)
 			for {
 				logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
 				select {

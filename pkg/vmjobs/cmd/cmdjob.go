@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"bufio"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"github.com/urfave/cli"
 	"os"
 )

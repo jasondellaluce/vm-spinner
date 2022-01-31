@@ -1,8 +1,8 @@
 package kmod
 
 import (
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/bpf"
 	"github.com/urfave/cli"
 	"strconv"
 	"strings"
