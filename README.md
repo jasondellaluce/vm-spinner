@@ -14,7 +14,9 @@ vm-spinner uses so-called `jobs` to do its magic.
 Jobs implements a `VMJob` interface that defines their name, description, and command to be run.  
 Moreover, there are other 2 interfaces that might be implemented:  
 * `VMJobProcessor`: to embed private logic to process output from command being run
-* `VMJobConfigurator`: to embed private logic to define and parse plugin specific flags. This adds an hard dep on `github.com/urfave/cli` package.
+* `VMJobConfigurator`: to embed private logic to define and parse plugin specific flags. This adds an hard dep on `github.com/urfave/cli` package.  
+
+All these interfaces can be found in the [vmjob](pkg/vmjobs/vmjob.go) file.
 
 Finally, vm-spinner also supports external plugins; they are go shared objects that implement the `VMJob` interface(and eventually `VMJobProcessor` and `VMJobConfigurator`),   
 and expose a `PluginJob` var.  
