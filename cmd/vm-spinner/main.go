@@ -268,7 +268,7 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 			}()
 
 			// select the VM outputs
-			channels := vagrant.RunVirtualMachine(ctx, conf)
+			channels := vagrant.RunVirtualMachine(conf)
 			for {
 				logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
 				select {

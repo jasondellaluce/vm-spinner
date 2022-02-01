@@ -1,7 +1,6 @@
 package vagrant
 
 import (
-	"context"
 	"fmt"
 	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"github.com/koding/vagrantutil"
@@ -50,7 +49,7 @@ func sendErr(c chan<- error, v error) {
 	}
 }
 
-func RunVirtualMachine(ctx context.Context, conf *VMConfig) *VMChannels {
+func RunVirtualMachine(conf *VMConfig) *VMChannels {
 	output := make(chan string)
 	debug := make(chan string)
 	info := make(chan string)
@@ -58,7 +57,7 @@ func RunVirtualMachine(ctx context.Context, conf *VMConfig) *VMChannels {
 	done := make(chan bool)
 
 	go func() {
-		vagrantErr := runVagrantMachine(ctx, conf, output, debug, info)
+		vagrantErr := runVagrantMachine(conf, output, debug, info)
 		if vagrantErr != nil {
 			sendErr(err, vagrantErr)
 		}
@@ -110,7 +109,7 @@ func haltVagrantMachine(vagrant *vagrantutil.Vagrant, conf *VMConfig, debug, inf
 	return nil
 }
 
-func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info chan<- string) (resErr error) {
+func runVagrantMachine(conf *VMConfig, output, debug, info chan<- string) (resErr error) {
 	var (
 		vagrant *vagrantutil.Vagrant
 		up      <-chan *vagrantutil.CommandOutput
@@ -136,7 +135,11 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 		return
 	}
 	defer func() {
-		resErr = destroyVagrantMachine(vagrant, conf, debug, info)
+		err := destroyVagrantMachine(vagrant, conf, debug, info)
+		// Do not override non-nil resErr
+		if resErr == nil {
+			resErr = err
+		}
 	}()
 
 	// Start up the VM
@@ -146,7 +149,11 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 		return
 	}
 	defer func() {
-		resErr = haltVagrantMachine(vagrant, conf, debug, info)
+		err := haltVagrantMachine(vagrant, conf, debug, info)
+		// Do not override non-nil resErr
+		if resErr == nil {
+			resErr = err
+		}
 	}()
 
 	resErr = waitOnOutput(up, info)
