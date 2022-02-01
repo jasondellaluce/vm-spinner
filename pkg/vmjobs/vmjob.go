@@ -10,26 +10,33 @@ import (
 
 var (
 	ImageParamDesc = "VM image to run the command on. Specify it multiple times for multiple vms."
-	EmptyCmdErr    = fmt.Errorf("provided command is empty")
 )
 
-type VMJob interface {
-	// Stringer -> name for the job
-	fmt.Stringer
-
-	// Desc -> job description used as cmd line sub cmd description
-	Desc() string
+// VMJobConfigurator -> implements this interface to declare flags for your job and eventually parse them
+type VMJobConfigurator interface {
 	// Flags -> list of cli.Flag supported specifically by the job.
 	// if missing, an "image/i" required flag is automatically enforced
 	Flags() []cli.Flag
 	// ParseCfg -> called when program starts on a job, to parse job specific config
 	ParseCfg(c *cli.Context) error
-	// Cmd -> returns command to be used
-	Cmd() string
+}
+
+// VMJobProcessor -> implements this interface to receive output lines and be able to do some post-processing in your own job
+type VMJobProcessor interface {
 	// Process -> processes each output line
 	Process(VM, outputLine string)
 	// Done -> called at the end of program, to let job flush its data if needed
 	Done()
+}
+
+// VMJob -> mandatory interface to be implemented
+type VMJob interface {
+	// Stringer -> name for the job
+	fmt.Stringer
+	// Desc -> job description used as cmd line sub cmd description
+	Desc() string
+	// Cmd -> returns command to be used and whether there is any other command enqueued to be sent
+	Cmd() (string, bool)
 }
 
 // pluginJob type is used to wrap the VMJob provided

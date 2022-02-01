@@ -1,8 +1,8 @@
 package kmod
 
 import (
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs/bpf"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs/bpf"
 	"github.com/urfave/cli"
 	"strconv"
 	"strings"
@@ -70,8 +70,8 @@ func (j *kmodJob) ParseCfg(c *cli.Context) error {
 	return nil
 }
 
-func (j *kmodJob) Cmd() string {
-	return j.Command
+func (j *kmodJob) Cmd() (string, bool) {
+	return j.Command, false
 }
 
 func (j *kmodJob) Process(VM, outputLine string) {

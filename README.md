@@ -11,25 +11,25 @@ This requires [Vagrant](https://www.vagrantup.com/) to be installed in your syst
 ## Jobs
 
 vm-spinner uses so-called `jobs` to do its magic.  
-Jobs implements a `VMJob` interface that defines their cmdline flags, name and description.  
-Plus, they embed their private logic to pass ssh commands to the vms and parse their outputs.  
+Jobs implements a `VMJob` interface that defines their name, description, and command to be run.  
+Moreover, there are other 2 interfaces that might be implemented:  
+* `VMJobProcessor`: to embed private logic to process output from command being run
+* `VMJobConfigurator`: to embed private logic to define and parse plugin specific flags. This adds an hard dep on `github.com/urfave/cli` package.  
 
-Moreover, vm-spinner also supports external plugins; they are go shared objects that implement the `VMJob` interface,  
+All these interfaces can be found in the [vmjob](pkg/vmjobs/vmjob.go) file.
+
+Finally, vm-spinner also supports external plugins; they are go shared objects that implement the `VMJob` interface(and eventually `VMJobProcessor` and `VMJobConfigurator`),   
 and expose a `PluginJob` var.  
 Here is a simple example:
+
 ```go
 package main
-
-import (
-	"bufio"
-	"os"
-    	"github.com/urfave/cli"
-)
 
 type myJob struct {
 	cmd string
 }
 
+// PluginJob symbol needs to be exported because it will be loaded by plugin framework
 var PluginJob myJob
 
 func (j *myJob) String() string {
@@ -40,33 +40,16 @@ func (j *myJob) Desc() string {
 	return "Run a simple plugin job."
 }
 
-func (j *myJob) Flags() []cli.Flag {
-	return nil
+func (j *myJob) Cmd() (string, bool) {
+	return `echo "I am a plugin"`, false
 }
-
-func (j *myJob) ParseCfg(_ *cli.Context) error {
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		j.cmd += scanner.Text() + "\n"
-	}
-	return nil
-}
-
-func (j *myJob) Cmd() string {
-	return j.cmd
-}
-
-func (j *myJob) Process(_, _ string) {}
-
-func (j *myJob) Done() {}
 ```
 
 You can see that the implementation is fairly simple.  
 Just a couple of things to note:
 
 * String() returns plugin name. It **must** be unique foreach plugin
-* `github.com/urfave/cli` package is an hard dep
-* When `nil` flags are returned, or if the list of flags does not contain an `image,i` flag, a default image flag is forced
+* When `VMJobConfigurator` interface is not implemented, or if the list of plugin flags does not contain an `image,i` flag, a default image flag is enforced by the framework
 
 ### Examples
 

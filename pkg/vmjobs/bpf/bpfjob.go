@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/jasondellaluce/experiments/vm-spinner/vmjobs"
+	"github.com/jasondellaluce/experiments/vm-spinner/pkg/vmjobs"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli"
 	"os"
@@ -70,8 +70,8 @@ func (j *bpfJob) ParseCfg(c *cli.Context) error {
 	return nil
 }
 
-func (j *bpfJob) Cmd() string {
-	return j.Command
+func (j *bpfJob) Cmd() (string, bool) {
+	return j.Command, false
 }
 
 func (j *bpfJob) Process(VM, outputLine string) {
