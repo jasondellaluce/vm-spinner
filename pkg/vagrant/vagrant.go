@@ -142,13 +142,17 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 	// Start up the VM
 	sendStr(debug, "Starting Vagrant VM for '"+conf.BoxName+"'")
 	up, resErr = vagrant.Up()
-	resErr = waitOnOutput(up, info)
 	if resErr != nil {
 		return
 	}
 	defer func() {
 		resErr = haltVagrantMachine(vagrant, conf, debug, info)
 	}()
+
+	resErr = waitOnOutput(up, info)
+	if resErr != nil {
+		return
+	}
 
 	// Establish an SSH connection and run command
 	sendStr(debug, "Running command with SSH for '"+conf.BoxName+"'")
