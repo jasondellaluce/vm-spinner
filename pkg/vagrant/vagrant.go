@@ -142,6 +142,7 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 	// Start up the VM
 	sendStr(debug, "Starting Vagrant VM for '"+conf.BoxName+"'")
 	up, resErr = vagrant.Up()
+	resErr = waitOnOutput(up, info)
 	if resErr != nil {
 		return
 	}
@@ -149,43 +150,29 @@ func runVagrantMachine(ctx context.Context, conf *VMConfig, output, debug, info 
 		resErr = haltVagrantMachine(vagrant, conf, debug, info)
 	}()
 
-	killedBySignal := selectHandleSig(up, ctx, info)
-	if killedBySignal {
-		return
-	}
-
 	// Establish an SSH connection and run command
 	sendStr(debug, "Running command with SSH for '"+conf.BoxName+"'")
-
 	for {
 		cmd, hasMore := conf.Job.Cmd()
-		killedBySignal, resErr = callSSHCmd(ctx, vagrant, cmd, output)
-		if !hasMore || killedBySignal || resErr != nil {
+		resErr = callSSHCmd(vagrant, cmd, output)
+		if !hasMore || resErr != nil {
 			break
 		}
 	}
 	return
 }
 
-func callSSHCmd(ctx context.Context, vagrant *vagrantutil.Vagrant, cmd string, output chan<- string) (bool, error) {
+func callSSHCmd(vagrant *vagrantutil.Vagrant, cmd string, output chan<- string) error {
 	ssh, err := vagrant.SSH(cmd)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return selectHandleSig(ssh, ctx, output), nil
+	return waitOnOutput(ssh, output)
 }
 
-// selectHandleSig returns whether ctx done was received
-func selectHandleSig(ch <-chan *vagrantutil.CommandOutput, ctx context.Context, out chan<- string) bool {
-	for {
-		select {
-		case line, ok := <-ch:
-			if !ok {
-				return false
-			}
-			sendStr(out, line.Line)
-		case <-ctx.Done():
-			return true
-		}
-	}
+func waitOnOutput(ch <-chan *vagrantutil.CommandOutput, out chan<- string) error {
+	myWaiter := vagrantutil.Waiter{OutputFunc: func(s string) {
+		sendStr(out, s)
+	}}
+	return myWaiter.Wait(ch, nil)
 }
