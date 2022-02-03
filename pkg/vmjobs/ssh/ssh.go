@@ -10,7 +10,8 @@ import (
 )
 
 type sshJob struct {
-	scanner *bufio.Scanner
+	scanner     *bufio.Scanner
+	exitOnError bool
 }
 
 func init() {
@@ -33,6 +34,10 @@ func (j *sshJob) Flags() []cli.Flag {
 			Usage:    "VM image to run the command on. Only one allowed.",
 			Required: true,
 		},
+		cli.BoolFlag{
+			Name:  "exit-on-error",
+			Usage: "Whether the job should exit at first failed command.",
+		},
 	}
 }
 
@@ -41,15 +46,21 @@ func (j *sshJob) ParseCfg(c *cli.Context) error {
 	if len(images) > 1 {
 		return fmt.Errorf("%v job can only work on single image", j)
 	}
+
+	j.exitOnError = c.Bool("exit-on-error")
 	return nil
 }
 
 func (j *sshJob) Cmd() (string, bool) {
 	fmt.Printf("> ")
 	if j.scanner.Scan() {
+		suffix := "\n"
+		if !j.exitOnError {
+			suffix = " || true\n"
+		}
 		text := j.scanner.Text()
 		if !strings.HasPrefix(text, "exit") {
-			return text + "\n", true
+			return text + suffix, true
 		}
 	}
 	return "", false
