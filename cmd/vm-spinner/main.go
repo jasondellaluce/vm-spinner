@@ -268,12 +268,13 @@ func runApp(c *cli.Context, job vmjobs.VMJob) error {
 			}()
 
 			// select the VM outputs
-			channels := vagrant.RunVirtualMachine(ctx, conf)
+			channels := vagrant.RunVirtualMachine(conf)
+			logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
+			logger.Info("job starting")
 			for {
-				logger := log.WithFields(log.Fields{"vm": conf.BoxName, "job": job.String()})
 				select {
 				case <-channels.Done:
-					logger.Infof("Job '%v' finished.", job)
+					logger.Info("job finished")
 					return
 				case l := <-channels.CmdOutput:
 					logger.Info(l)
